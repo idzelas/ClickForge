@@ -167,7 +167,14 @@ export function createOuterShellGeometries(
 
   // ── 1. Outer wall ring ──────────────────────────────────────────────────
   const ringShape = transformToMm(baseShape, scale, svgWidth, svgHeight, mirrorShell);
-  ringShape.holes.push(new THREE.Path(innerShape.getPoints(128)));
+  // getPoints(128) returns 129 pts; the last duplicates the first for closed shapes.
+  // That zero-length closing edge creates a degenerate triangle in ExtrudeGeometry
+  // which renders as a visible spike.  Strip it before pushing the hole.
+  const innerPts = innerShape.getPoints(128);
+  const innerHolePts = innerPts[innerPts.length - 1].distanceTo(innerPts[0]) < 1e-6
+    ? innerPts.slice(0, -1)
+    : innerPts;
+  ringShape.holes.push(new THREE.Path(innerHolePts));
   const outerWallGeo = extrudeShape(ringShape, totalDepth);
 
   // ── 2. Solid floor — never penetrated ──────────────────────────────────
