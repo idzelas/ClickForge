@@ -379,9 +379,14 @@ function polygonArea(pts: THREE.Vector2[]): number {
  */
 function cloneShape(shape: THREE.Shape): THREE.Shape {
   const raw = shape.getPoints(128); // n+1 pts; last ≈ first for closed shapes
+  // A valid closed polygon needs at least 3 distinct vertices.
+  // If the shape is degenerate (empty SVG, single point, collapsed offset)
+  // fall back to a small circle so downstream geometry never crashes.
+  if (raw.length < 3) return createDefaultShape(4);
   const first = raw[0];
   const last  = raw[raw.length - 1];
   const pts = last.distanceTo(first) < 1e-6 ? raw.slice(0, -1) : raw;
+  if (pts.length < 3) return createDefaultShape(4);
   const s = new THREE.Shape();
   s.setFromPoints(pts);
   return s;
