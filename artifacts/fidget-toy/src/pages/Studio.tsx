@@ -496,22 +496,22 @@ export default function Studio() {
                   className="h-4 w-4 rounded accent-primary"
                 />
                 <span className="text-sm">
-                  MX-style contact holes
+                  Cherry MX 5-pin holes
                 </span>
               </label>
               {settings.pinHolesEnabled && (
                 <SliderRow
-                  label="Pin hole radius"
+                  label="Print clearance"
                   value={settings.pinHoleRadius ?? DEFAULT_SETTINGS.pinHoleRadius}
-                  min={0.4}
-                  max={2}
-                  step={0.1}
+                  min={0}
+                  max={0.5}
+                  step={0.05}
                   unit="mm"
                   onChange={(v) => setSetting("pinHoleRadius", v)}
                 />
               )}
               <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                Adds 1 center guide hole + 4 contact pin holes through the pocket floor — lets a real MX switch snap in.
+                Punches the official Cherry MX PCB footprint through the pocket floor: Ø4 mm center guide · Ø1.8 mm retention pegs at ±5.08 mm · Ø1.5 mm electrical contacts at ±3.81 mm / −2.54 mm. Clearance adds to every radius to offset FDM over-extrusion.
               </p>
             </div>
 

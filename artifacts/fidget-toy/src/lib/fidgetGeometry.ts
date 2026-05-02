@@ -24,7 +24,7 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   targetSizeMm: 50,
   lockDimension: "width",
   pinHolesEnabled: false,
-  pinHoleRadius: 0.9,
+  pinHoleRadius: 0.1,   // print clearance (tolerance) added to each spec radius
 };
 
 /**
@@ -92,7 +92,7 @@ export function createOuterShellGeometries(
   //    When pin holes are enabled, punch MX-style contact holes through the floor.
   const floorShape = transformShape(baseShape, scale * insetFactor, svgWidth, svgHeight);
   if (settings.pinHolesEnabled) {
-    addMXPinHoles(floorShape, settings.keycapSize, settings.pinHoleRadius);
+    addMXPinHoles(floorShape, settings.pinHoleRadius);
   }
   const innerFillFloorGeo = extrudeShape(floorShape, floorDepth);
 
@@ -177,28 +177,32 @@ function transformShape(shape: THREE.Shape, scale: number, svgWidth: number, svg
 }
 
 /**
- * Punches MX-style pin holes through a shape:
- *   - 1 center guide hole (radius × 2)
- *   - 4 contact pin holes at the diagonal corners inside the keycap square
+ * Punches the official Cherry MX 5-pin PCB footprint holes through a shape.
+ * All positions are the fixed hardware spec (relative to switch centre):
  *
- * All holes stay well inside the keycap pocket (keycapSize × keycapSize).
+ *   Center guide pin:       ( 0.00,  0.00)  Ø 4.0 mm  r = 2.00
+ *   Left  retention peg:    (-5.08,  0.00)  Ø 1.8 mm  r = 0.90
+ *   Right retention peg:    (+5.08,  0.00)  Ø 1.8 mm  r = 0.90
+ *   Left  electrical pin:   (-3.81, -2.54)  Ø 1.5 mm  r = 0.75
+ *   Right electrical pin:   (+3.81, -2.54)  Ø 1.5 mm  r = 0.75
+ *
+ * `tolerance` (mm) is added to every radius to compensate for FDM over-extrusion.
+ * Source: Cherry MX datasheet · KiCad SW_Cherry_MX_PCB footprint
  */
-function addMXPinHoles(shape: THREE.Shape, keycapSize: number, pinHoleRadius: number): void {
-  const guideRadius = pinHoleRadius * 2;
-  const spacing = keycapSize * 0.22; // e.g. 3.1mm for 14mm pocket
+function addMXPinHoles(shape: THREE.Shape, tolerance: number): void {
+  // [x, y, baseRadius]
+  const pins: [number, number, number][] = [
+    [  0.00,  0.00, 2.00 ],  // center guide pin
+    [ -5.08,  0.00, 0.90 ],  // left  retention peg
+    [  5.08,  0.00, 0.90 ],  // right retention peg
+    [ -3.81, -2.54, 0.75 ],  // left  electrical contact
+    [  3.81, -2.54, 0.75 ],  // right electrical contact
+  ];
 
-  // Center guide hole
-  const center = new THREE.Path();
-  center.absarc(0, 0, guideRadius, 0, Math.PI * 2, false);
-  shape.holes.push(center);
-
-  // 4 contact pin holes at (±spacing, ±spacing)
-  for (const sx of [-1, 1]) {
-    for (const sy of [-1, 1]) {
-      const h = new THREE.Path();
-      h.absarc(sx * spacing, sy * spacing, pinHoleRadius, 0, Math.PI * 2, false);
-      shape.holes.push(h);
-    }
+  for (const [x, y, r] of pins) {
+    const h = new THREE.Path();
+    h.absarc(x, y, r + tolerance, 0, Math.PI * 2, false);
+    shape.holes.push(h);
   }
 }
 
