@@ -325,9 +325,17 @@ function polygonArea(pts: THREE.Vector2[]): number {
   return Math.abs(area) / 2;
 }
 
-/** Shallow-clone a THREE.Shape (copies the outer curve points, drops holes). */
+/**
+ * Shallow-clone a THREE.Shape (copies the outer curve points, drops holes).
+ * Strips the closing duplicate that THREE.Shape.getPoints(n) appends for
+ * closed paths — the duplicate creates a zero-length degenerate edge which
+ * ExtrudeGeometry turns into a NaN-normal triangle and a visible streak.
+ */
 function cloneShape(shape: THREE.Shape): THREE.Shape {
-  const pts = shape.getPoints(128);
+  const raw = shape.getPoints(128); // n+1 pts; last ≈ first for closed shapes
+  const first = raw[0];
+  const last  = raw[raw.length - 1];
+  const pts = last.distanceTo(first) < 1e-6 ? raw.slice(0, -1) : raw;
   const s = new THREE.Shape();
   s.setFromPoints(pts);
   return s;
@@ -423,7 +431,9 @@ function addSquareHole(shape: THREE.Shape, size: number): void {
   hole.lineTo( half, -half);
   hole.lineTo( half,  half);
   hole.lineTo(-half,  half);
-  hole.lineTo(-half, -half);
+  // Do NOT lineTo back to start — that would add a zero-length closing
+  // edge that generates a degenerate NaN-normal triangle when extruded.
+  hole.closePath();
   shape.holes.push(hole);
 }
 
