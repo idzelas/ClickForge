@@ -267,6 +267,33 @@ export default function Studio() {
     [svgState, settings]
   );
 
+  // Compute grid metrics that track the actual model footprint so the
+  // grid always sits flush under the models regardless of targetSizeMm.
+  const sceneMetrics = useMemo(() => {
+    if (!svgState) {
+      return { gridY: -25, gridSize: 300, cellSize: 5, sectionSize: 25, fadeDistance: 200 };
+    }
+    const svgBase = settings.lockDimension === "width" ? svgState.width : svgState.height;
+    const scale   = svgBase > 0 ? settings.targetSizeMm / svgBase : 1;
+    // Model silhouette spans ±halfH in Y (ExtrudeGeometry lies in XY, extruded along Z).
+    const modelHalfH = (svgState.height * scale) / 2;
+    const gridY = -modelHalfH;
+
+    // Scale grid cell/section density so lines aren't too dense for huge models
+    // or too sparse for tiny ones.  Target ~10 cells across the model.
+    const targetSize = settings.targetSizeMm;
+    const rawCell    = targetSize / 10;
+    // Snap cell size to a "nice" value: 1, 2, 5, 10, 20, 50, 100 …
+    const niceSteps  = [0.5, 1, 2, 5, 10, 20, 50, 100, 200];
+    const cellSize   = niceSteps.find(s => s >= rawCell) ?? 200;
+    const sectionSize = cellSize * 5;
+    const gridSize    = Math.max(300, targetSize * 8);
+    const fadeDistance = Math.max(200, targetSize * 5);
+
+    return { gridY, gridSize, cellSize, sectionSize, fadeDistance };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [svgState, settings.lockDimension, settings.targetSizeMm]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const outerWallRef = useRef<THREE.Mesh | null>(null);
   const innerFillFloorRef = useRef<THREE.Mesh | null>(null);
@@ -908,15 +935,15 @@ export default function Studio() {
             </Suspense>
 
             <Grid
-              args={[300, 300]}
-              cellSize={5}
+              args={[sceneMetrics.gridSize, sceneMetrics.gridSize]}
+              cellSize={sceneMetrics.cellSize}
               cellThickness={0.5}
               cellColor="#1e1e2e"
-              sectionSize={25}
+              sectionSize={sceneMetrics.sectionSize}
               sectionThickness={1}
               sectionColor="#2e2e4e"
-              fadeDistance={200}
-              position={[0, -25, 0]}
+              fadeDistance={sceneMetrics.fadeDistance}
+              position={[0, sceneMetrics.gridY, 0]}
             />
 
             <OrbitControls makeDefault enablePan enableZoom enableRotate />
