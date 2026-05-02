@@ -2,8 +2,7 @@ import * as THREE from "three";
 
 export interface FidgetSettings {
   totalDepth: number;         // outer wall total height (mm), e.g. 22
-  innerFillDepth: number;     // inner fill total height (mm), e.g. 12
-  keycapPocketDepth: number;  // how deep the blind pocket goes from the TOP of inner fill (mm), e.g. 10
+  innerFillDepth: number;     // total pocket block height (pocket cavity + floor), e.g. 10
   insetAmount: number;        // how much inner fill is inset from outer wall edge (mm each side), e.g. 1
   keycapSize: number;         // keycap square pocket side length (mm), e.g. 14
   pegRadius: number;          // inner clicker peg radius (mm), e.g. 3.5
@@ -11,29 +10,38 @@ export interface FidgetSettings {
   lockDimension: "width" | "height";
   // MX-style contact pin holes punched through the pocket floor
   pinHolesEnabled: boolean;
-  pinHoleRadius: number;      // radius of each contact pin hole (mm), e.g. 0.9
+  pinHoleRadius: number;      // print clearance added to each MX spec radius (mm), e.g. 0.1
 }
 
 export const DEFAULT_SETTINGS: FidgetSettings = {
   totalDepth: 22,
-  innerFillDepth: 12,
-  keycapPocketDepth: 10,
+  innerFillDepth: 10,   // total pocket depth (cavity + floor); floor is auto-computed at ~15%
   insetAmount: 1,
   keycapSize: 14,
   pegRadius: 3.5,
   targetSizeMm: 50,
   lockDimension: "width",
   pinHolesEnabled: false,
-  pinHoleRadius: 0.1,   // print clearance (tolerance) added to each spec radius
+  pinHoleRadius: 0.1,
 };
+
+/**
+ * Auto-compute the floor thickness from the total pocket block height.
+ * Floor = ~15% of innerFillDepth, clamped to a minimum of 1.5 mm.
+ * This ensures the MX pin holes + pocket cavity always fit within `innerFillDepth`.
+ */
+export function computeFloorDepth(innerFillDepth: number): number {
+  return Math.max(1.5, Math.round(innerFillDepth * 0.15 * 10) / 10);
+}
 
 /**
  * Outer shell geometry broken into 3 meshes:
  *
  *  outerWall      – the ring (SVG perimeter minus inset hole), full totalDepth tall
- *  innerFillFloor – solid bottom cap of the inner fill, floorDepth = innerFillDepth - keycapPocketDepth
+ *  innerFillFloor – solid bottom cap, floorDepth = computeFloorDepth(innerFillDepth) (~15%)
  *  innerFillWalls – ring above the floor up to innerFillDepth, leaving the square pocket open
  *
+ * `innerFillDepth` is the TOTAL pocket block height (pocket cavity + floor).
  * All three share z=0 as their bottom face. Use zOffsets to position them correctly.
  */
 export interface OuterShellGeometries {
@@ -73,11 +81,12 @@ export function createOuterShellGeometries(
   const scaledH = svgHeight * scale;
 
   const baseShape = svgShapes.length > 0 ? svgShapes[0] : createDefaultShape(40);
-  const { totalDepth, innerFillDepth, keycapPocketDepth, insetAmount, keycapSize } = settings;
+  const { totalDepth, innerFillDepth, insetAmount, keycapSize } = settings;
 
-  // Clamp pocket depth so it never exceeds innerFillDepth (leave at least 1mm floor)
-  const pocketDepth = Math.min(keycapPocketDepth, innerFillDepth - 1);
-  const floorDepth = innerFillDepth - pocketDepth; // e.g. 12 - 10 = 2mm
+  // Floor is auto-computed at ~15% of innerFillDepth (min 1.5 mm).
+  // Pocket cavity = remainder above the floor.
+  const floorDepth = computeFloorDepth(innerFillDepth);
+  const pocketDepth = innerFillDepth - floorDepth;
 
   // Scale factor to shrink the shape inward by insetAmount on each side
   const insetFactor = computeInsetFactor(scaledW, scaledH, insetAmount);
@@ -141,8 +150,9 @@ export function createInnerClickerGeometries(
   addSquareHole(clickerShape, keycapSize);
   const bodyGeo = extrudeShape(clickerShape, clickerDepth);
 
-  // Peg: drops down from the bottom of the clicker into the keycap pocket
-  const pegHeight = settings.keycapPocketDepth * 0.6;
+  // Peg: drops into the pocket cavity (innerFillDepth minus auto floor)
+  const pocketCavity = innerFillDepth - computeFloorDepth(innerFillDepth);
+  const pegHeight = pocketCavity * 0.6;
   const pegGeo = new THREE.CylinderGeometry(pegRadius, pegRadius, pegHeight, 32);
 
   return { body: bodyGeo, peg: pegGeo, clickerDepth, pegHeight };
