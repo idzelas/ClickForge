@@ -473,7 +473,7 @@ export default function Studio() {
                   onChange={(v) => setSetting("keycapPocketDepth", v)}
                 />
                 <SliderRow
-                  label="Wall inset"
+                  label="Wall thickness"
                   value={settings.insetAmount}
                   min={0.5}
                   max={5}

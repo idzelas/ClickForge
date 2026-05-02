@@ -1,32 +1,32 @@
 import * as THREE from "three";
+import { insetPolygon } from "./polygonOffset";
 
 export interface FidgetSettings {
   totalDepth: number;         // outer wall total height (mm), e.g. 22
   innerFillDepth: number;     // total inner fill block height (pocket + floor), e.g. 12
   keycapPocketDepth: number;  // total pocket depth from top of inner fill (mm), e.g. 10
-  insetAmount: number;        // how much inner fill is inset from outer wall edge (mm each side), e.g. 1
+  insetAmount: number;        // true wall thickness — every interior point is exactly this far from outer wall (mm), e.g. 1.5
   keycapSize: number;         // keycap square pocket side length (mm), e.g. 14
   pegRadius: number;          // inner clicker peg radius (mm), e.g. 3.5
   targetSizeMm: number;       // target mm for the locked SVG dimension
   lockDimension: "width" | "height";
-  // MX-style switch pin holes
   pinHolesEnabled: boolean;
   pinHoleRadius: number;      // print clearance added to each MX spec radius (mm), e.g. 0.1
-  pinHoleDepth: number;       // depth of the pin-hole section at the deepest end of the pocket (mm), e.g. 3
+  pinHoleDepth: number;       // depth of pin-hole section at deepest end of pocket (mm), e.g. 3
 }
 
 export const DEFAULT_SETTINGS: FidgetSettings = {
   totalDepth: 22,
-  innerFillDepth: 12,    // total housing block (pocket + solid floor)
-  keycapPocketDepth: 10, // floor = innerFillDepth − keycapPocketDepth = 2 mm solid
-  insetAmount: 1,
+  innerFillDepth: 12,
+  keycapPocketDepth: 10,
+  insetAmount: 1.5,
   keycapSize: 14,
   pegRadius: 3.5,
   targetSizeMm: 50,
   lockDimension: "width",
   pinHolesEnabled: false,
   pinHoleRadius: 0.1,
-  pinHoleDepth: 3,       // lowest 3 mm of the 10 mm pocket = pin section; upper 7 mm = keycap square
+  pinHoleDepth: 3,
 };
 
 /**
@@ -42,11 +42,9 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
  *   │   solid floor               │  floorDepth = innerFillDepth − keycapPocketDepth
  *   └─────────────────────────────┘  ← z = 0  (bottom of toy)
  *
- * Outer shell geometry: 4 meshes when pin holes enabled, 3 when disabled.
- *   outerWall         – SVG ring, full totalDepth
- *   innerFillFloor    – solid base cap, floorDepth
- *   innerFillPinSection – (pin-holes-only), pinHoleDepth   [null when disabled]
- *   innerFillWalls    – keycap square aperture, keycapSquareDepth
+ * Wall geometry uses a true geometric inward offset (not uniform scaling):
+ *   Every point on the inner wall boundary is exactly `insetAmount` mm from
+ *   the outer SVG path, measured along the local surface normal.
  */
 export interface OuterShellGeometries {
   outerWall: THREE.BufferGeometry;
@@ -81,53 +79,63 @@ export function createOuterShellGeometries(
   svgHeight: number
 ): OuterShellGeometries {
   const { scale } = computeScale(settings, svgWidth, svgHeight);
-  const scaledW = svgWidth * scale;
-  const scaledH = svgHeight * scale;
 
   const baseShape = svgShapes.length > 0 ? svgShapes[0] : createDefaultShape(40);
   const {
     totalDepth, innerFillDepth,
-    insetAmount, keycapSize, pinHolesEnabled,
+    keycapSize, pinHolesEnabled,
   } = settings;
   const keycapPocketDepth = settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth;
-  const pinHoleRadius = settings.pinHoleRadius ?? DEFAULT_SETTINGS.pinHoleRadius;
-  const pinHoleDepth = settings.pinHoleDepth ?? DEFAULT_SETTINGS.pinHoleDepth;
+  const insetAmount      = settings.insetAmount      ?? DEFAULT_SETTINGS.insetAmount;
+  const pinHoleRadius    = settings.pinHoleRadius    ?? DEFAULT_SETTINGS.pinHoleRadius;
+  const pinHoleDepth     = settings.pinHoleDepth     ?? DEFAULT_SETTINGS.pinHoleDepth;
 
-  // Clamp pocket so the floor is at least 1 mm.
   const pocketDepth = Math.min(keycapPocketDepth, innerFillDepth - 1);
-  const floorDepth = innerFillDepth - pocketDepth;
-
-  // Pin section lives at the deepest end of the pocket.
-  // keycap square section = the remaining shallower portion.
-  const pinDepth = pinHolesEnabled ? Math.min(pinHoleDepth, pocketDepth - 1) : 0;
+  const floorDepth  = innerFillDepth - pocketDepth;
+  const pinDepth    = pinHolesEnabled ? Math.min(pinHoleDepth, pocketDepth - 1) : 0;
   const squareDepth = pocketDepth - pinDepth;
 
-  const insetFactor = computeInsetFactor(scaledW, scaledH, insetAmount);
+  // ── Transform outer SVG path to world-space mm coords ──────────────────
+  const outerShape = transformToMm(baseShape, scale, svgWidth, svgHeight);
+
+  // ── True geometric inward offset → inner wall boundary ─────────────────
+  // insetAmount is the actual wall thickness on every side, regardless of
+  // how irregular / concave the SVG outline is.
+  const innerShape = offsetShapeInward(outerShape, insetAmount);
+  if (!innerShape) {
+    // Shape collapsed (inset > half the narrowest dimension) — fall back to
+    // a small solid block so the viewer never shows nothing.
+    const fallback = createDefaultShape(4);
+    const fallbackGeo = extrudeShape(fallback, innerFillDepth);
+    return {
+      outerWall: extrudeShape(outerShape, totalDepth),
+      innerFillFloor: fallbackGeo,
+      innerFillPinSection: null,
+      innerFillWalls: fallbackGeo,
+      zOffsets: { outerWall: 0, innerFillFloor: 0, innerFillPinSection: 0, innerFillWalls: 0 },
+      floorDepth: innerFillDepth,
+    };
+  }
 
   // ── 1. Outer wall ring ──────────────────────────────────────────────────
-  const outerShape = transformShape(baseShape, scale, svgWidth, svgHeight);
-  const insetShapeForHole = transformShape(baseShape, scale * insetFactor, svgWidth, svgHeight);
-  outerShape.holes.push(new THREE.Path(insetShapeForHole.getPoints(64)));
-  const outerWallGeo = extrudeShape(outerShape, totalDepth);
+  const ringShape = transformToMm(baseShape, scale, svgWidth, svgHeight);
+  ringShape.holes.push(new THREE.Path(innerShape.getPoints(128)));
+  const outerWallGeo = extrudeShape(ringShape, totalDepth);
 
-  // ── 2. Inner fill floor — always 100% solid ─────────────────────────────
-  const floorShape = transformShape(baseShape, scale * insetFactor, svgWidth, svgHeight);
+  // ── 2. Solid floor — never penetrated ──────────────────────────────────
+  const floorShape = cloneShape(innerShape);
   const innerFillFloorGeo = extrudeShape(floorShape, floorDepth);
 
-  // ── 3. Pin-hole section (deepest part of pocket) ────────────────────────
-  //    Only present when pinHolesEnabled.  Has 5 MX cylinders, NO keycap square.
-  //    Sits directly on top of the solid floor.
+  // ── 3. MX pin-hole section (deepest part of pocket) ────────────────────
   let innerFillPinSectionGeo: THREE.BufferGeometry | null = null;
   if (pinHolesEnabled && pinDepth > 0) {
-    const pinShape = transformShape(baseShape, scale * insetFactor, svgWidth, svgHeight);
+    const pinShape = cloneShape(innerShape);
     addMXPinHoles(pinShape, pinHoleRadius);
     innerFillPinSectionGeo = extrudeShape(pinShape, pinDepth);
   }
 
-  // ── 4. Keycap square section (upper / shallower part of pocket) ─────────
-  //    Sits on top of the pin section (or floor when pins disabled).
-  //    The 14×14 mm square aperture is the keycap pocket opening.
-  const wallsShape = transformShape(baseShape, scale * insetFactor, svgWidth, svgHeight);
+  // ── 4. Keycap square walls (upper / shallower part of pocket) ──────────
+  const wallsShape = cloneShape(innerShape);
   addSquareHole(wallsShape, keycapSize);
   const innerFillWallsGeo = extrudeShape(wallsShape, squareDepth);
 
@@ -153,54 +161,108 @@ export function createInnerClickerGeometries(
   svgHeight: number
 ): InnerClickerGeometries {
   const { scale } = computeScale(settings, svgWidth, svgHeight);
-  const scaledW = svgWidth * scale;
-  const scaledH = svgHeight * scale;
 
   const baseShape = svgShapes.length > 0 ? svgShapes[0] : createDefaultShape(40);
-  const { totalDepth, innerFillDepth, insetAmount, keycapSize, pegRadius } = settings;
+  const { totalDepth, innerFillDepth, keycapSize, pegRadius } = settings;
+  const insetAmount = settings.insetAmount ?? DEFAULT_SETTINGS.insetAmount;
+  const keycapPocketDepth = settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth;
 
   const recessDepth = totalDepth - innerFillDepth;
   const clickerDepth = Math.max(1, recessDepth - 1);
 
-  const insetFactor = computeInsetFactor(scaledW, scaledH, insetAmount);
-  const clickerScale = scale * insetFactor * 0.988;
+  // The clicker's outer boundary is the inner wall shape plus 0.3 mm print clearance,
+  // so it slides cleanly into the recess without binding.
+  const CLEARANCE = 0.3;
+  const outerShape = transformToMm(baseShape, scale, svgWidth, svgHeight);
+  const clickerShape = offsetShapeInward(outerShape, insetAmount + CLEARANCE);
 
-  const clickerShape = transformShape(baseShape, clickerScale, svgWidth, svgHeight);
-  addSquareHole(clickerShape, keycapSize);
-  const bodyGeo = extrudeShape(clickerShape, clickerDepth);
+  let bodyGeo: THREE.BufferGeometry;
+  if (clickerShape) {
+    addSquareHole(clickerShape, keycapSize);
+    bodyGeo = extrudeShape(clickerShape, clickerDepth);
+  } else {
+    // Fallback: tiny placeholder
+    bodyGeo = extrudeShape(createDefaultShape(4), clickerDepth);
+  }
 
-  const pegHeight = settings.keycapPocketDepth * 0.6;
+  const pegHeight = keycapPocketDepth * 0.6;
   const pegGeo = new THREE.CylinderGeometry(pegRadius, pegRadius, pegHeight, 32);
 
   return { body: bodyGeo, peg: pegGeo, clickerDepth, pegHeight };
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Geometry helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Transform an SVG-space THREE.Shape into world-space millimetre coordinates.
+ * - Scales by `scale` (px → mm).
+ * - Re-centres so the shape is centred on the origin.
+ * - Flips Y axis (SVG Y-down → Three.js Y-up).
+ * - Discretises curves to 128 points for high-fidelity offset computation.
+ */
+function transformToMm(
+  shape: THREE.Shape,
+  scale: number,
+  svgWidth: number,
+  svgHeight: number
+): THREE.Shape {
+  const cx = (svgWidth  * scale) / 2;
+  const cy = (svgHeight * scale) / 2;
+  const pts = shape.getPoints(128).map(
+    (p) => new THREE.Vector2(p.x * scale - cx, -(p.y * scale - cy))
+  );
+  const out = new THREE.Shape();
+  out.setFromPoints(pts);
+  return out;
+}
+
+/**
+ * Compute the true inward offset of a THREE.Shape.
+ * Returns a new THREE.Shape whose boundary is everywhere exactly
+ * `offsetMm` mm inward from the input boundary, or null if the shape
+ * is too small to offset (would collapse to nothing).
+ */
+function offsetShapeInward(shape: THREE.Shape, offsetMm: number): THREE.Shape | null {
+  const pts = shape.getPoints(128);
+  const contours = insetPolygon(pts, offsetMm);
+  if (contours.length === 0) return null;
+
+  // If there are multiple contours (very rare — only in extreme concavities
+  // that split the shape), use the largest one.
+  const largest = contours.sort(
+    (a, b) => polygonArea(b) - polygonArea(a)
+  )[0];
+
+  if (largest.length < 3) return null;
+
+  const result = new THREE.Shape();
+  result.setFromPoints(largest);
+  return result;
+}
+
+/** Unsigned polygon area (for picking the largest contour). */
+function polygonArea(pts: THREE.Vector2[]): number {
+  let area = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  }
+  return Math.abs(area) / 2;
+}
+
+/** Shallow-clone a THREE.Shape (copies the outer curve points, drops holes). */
+function cloneShape(shape: THREE.Shape): THREE.Shape {
+  const pts = shape.getPoints(128);
+  const s = new THREE.Shape();
+  s.setFromPoints(pts);
+  return s;
+}
 
 function computeScale(s: FidgetSettings, w: number, h: number): { scale: number } {
   const base = s.lockDimension === "width" ? w : h;
   return { scale: base > 0 ? s.targetSizeMm / base : 1 };
-}
-
-function computeInsetFactor(scaledW: number, scaledH: number, inset: number): number {
-  return Math.max(0.5, Math.min(scaledW - 2 * inset, scaledH - 2 * inset) / Math.max(scaledW, scaledH));
-}
-
-function transformShape(shape: THREE.Shape, scale: number, svgWidth: number, svgHeight: number): THREE.Shape {
-  const cx = (svgWidth * scale) / 2;
-  const cy = (svgHeight * scale) / 2;
-  const pts = shape.getPoints(64).map((p) => new THREE.Vector2(p.x * scale - cx, -(p.y * scale - cy)));
-  const out = new THREE.Shape();
-  out.setFromPoints(pts);
-  for (const hole of shape.holes) {
-    const hp = hole.getPoints(32).map((p) => new THREE.Vector2(p.x * scale - cx, -(p.y * scale - cy)));
-    const h = new THREE.Path();
-    h.setFromPoints(hp);
-    out.holes.push(h);
-  }
-  return out;
 }
 
 /**
@@ -213,7 +275,6 @@ function transformShape(shape: THREE.Shape, scale: number, svgWidth: number, svg
  *   Right electrical pin:   (+3.81, -2.54)  Ø 1.5 mm  r = 0.75
  *
  * `tolerance` (mm) is added to every radius for FDM over-extrusion compensation.
- * Source: Cherry MX datasheet · KiCad SW_Cherry_MX_PCB footprint
  */
 function addMXPinHoles(shape: THREE.Shape, tolerance: number): void {
   const pins: [number, number, number][] = [
@@ -234,27 +295,24 @@ function addSquareHole(shape: THREE.Shape, size: number): void {
   const half = size / 2;
   const hole = new THREE.Path();
   hole.moveTo(-half, -half);
-  hole.lineTo(half, -half);
-  hole.lineTo(half, half);
-  hole.lineTo(-half, half);
+  hole.lineTo( half, -half);
+  hole.lineTo( half,  half);
+  hole.lineTo(-half,  half);
   hole.lineTo(-half, -half);
   shape.holes.push(hole);
 }
 
 function extrudeShape(shape: THREE.Shape, depth: number): THREE.BufferGeometry {
-  return new THREE.ExtrudeGeometry(shape, {
-    depth,
-    bevelEnabled: false,
-  });
+  return new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
 }
 
 function createDefaultShape(size: number): THREE.Shape {
   const s = new THREE.Shape();
   const r = size / 2;
   s.moveTo(-r, -r);
-  s.lineTo(r, -r);
-  s.lineTo(r, r);
-  s.lineTo(-r, r);
+  s.lineTo( r, -r);
+  s.lineTo( r,  r);
+  s.lineTo(-r,  r);
   s.lineTo(-r, -r);
   return s;
 }
