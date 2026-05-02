@@ -82,7 +82,15 @@ function OuterShellGroup({
   // rotate 180° around X (so local +z becomes world -z) and shift to
   // +totalDepth/2 so the part still straddles world z=0.
   const groupZ = flip ? settings.totalDepth / 2 : -settings.totalDepth / 2;
-  const groupX = fitCheck ? 0 : -35;
+
+  // Separation must grow with the model so the two parts never overlap.
+  // Compute the actual model half-width from the locked dimension + aspect ratio.
+  const svgBase = settings.lockDimension === "width" ? svgWidth : svgHeight;
+  const scale = svgBase > 0 ? settings.targetSizeMm / svgBase : 1;
+  const modelHalfW = (svgWidth * scale) / 2;
+  const separationX = Math.max(35, modelHalfW + 12);
+
+  const groupX = fitCheck ? 0 : -separationX;
 
   return (
     <group position={[groupX, 0, groupZ]} rotation={[flip ? Math.PI : 0, 0, 0]}>
@@ -161,7 +169,13 @@ function InnerClickerGroup({
   //   → groupZ = -totalDepth/2 + innerFillDepth + clickerTotalDepth/2
   const flip = settings.flipClicker ?? false;
 
-  const normalGroupPos: [number, number, number] = [35, 0, 0];
+  // Mirror the shell's dynamic separation so the gap stays consistent.
+  const svgBase = settings.lockDimension === "width" ? svgWidth : svgHeight;
+  const scale = svgBase > 0 ? settings.targetSizeMm / svgBase : 1;
+  const modelHalfW = (svgWidth * scale) / 2;
+  const separationX = Math.max(35, modelHalfW + 12);
+
+  const normalGroupPos: [number, number, number] = [separationX, 0, 0];
   const fitCheckGroupPos: [number, number, number] = [
     0,
     0,
