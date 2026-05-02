@@ -53,6 +53,7 @@ function OuterShellGroup({
   svgHeight,
   outerWallRef,
   innerFillFloorRef,
+  innerFillPinSectionRef,
   innerFillWallsRef,
   fitCheck,
 }: {
@@ -62,6 +63,7 @@ function OuterShellGroup({
   svgHeight: number;
   outerWallRef: React.RefObject<THREE.Mesh | null>;
   innerFillFloorRef: React.RefObject<THREE.Mesh | null>;
+  innerFillPinSectionRef: React.RefObject<THREE.Mesh | null>;
   innerFillWallsRef: React.RefObject<THREE.Mesh | null>;
   fitCheck: boolean;
 }) {
@@ -72,7 +74,6 @@ function OuterShellGroup({
   );
 
   const groupZ = -settings.totalDepth / 2;
-  // In fit-check mode center at x=0; normal mode offset left
   const groupX = fitCheck ? 0 : -35;
 
   return (
@@ -90,13 +91,21 @@ function OuterShellGroup({
         />
       </mesh>
 
-      {/* Inner fill floor */}
+      {/* Solid floor — never penetrated */}
       <mesh ref={innerFillFloorRef} position={[0, 0, geos.zOffsets.innerFillFloor]} castShadow receiveShadow>
         <primitive object={geos.innerFillFloor} />
         <meshStandardMaterial color="#9B94FF" metalness={0.2} roughness={0.5} />
       </mesh>
 
-      {/* Inner fill pocket walls */}
+      {/* MX pin-hole section — deepest part of pocket (only when enabled) */}
+      {geos.innerFillPinSection && (
+        <mesh ref={innerFillPinSectionRef} position={[0, 0, geos.zOffsets.innerFillPinSection]} castShadow receiveShadow>
+          <primitive object={geos.innerFillPinSection} />
+          <meshStandardMaterial color="#7C74E8" metalness={0.2} roughness={0.5} />
+        </mesh>
+      )}
+
+      {/* Keycap square pocket walls — upper / shallower section of pocket */}
       <mesh ref={innerFillWallsRef} position={[0, 0, geos.zOffsets.innerFillWalls]} castShadow receiveShadow>
         <primitive object={geos.innerFillWalls} />
         <meshStandardMaterial color="#9B94FF" metalness={0.2} roughness={0.5} />
@@ -208,6 +217,7 @@ export default function Studio() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const outerWallRef = useRef<THREE.Mesh | null>(null);
   const innerFillFloorRef = useRef<THREE.Mesh | null>(null);
+  const innerFillPinSectionRef = useRef<THREE.Mesh | null>(null);
   const innerFillWallsRef = useRef<THREE.Mesh | null>(null);
   const bodyRef = useRef<THREE.Mesh | null>(null);
   const pegRef = useRef<THREE.Mesh | null>(null);
@@ -260,7 +270,7 @@ export default function Studio() {
   };
 
   const getMeshes = (): THREE.Mesh[] => {
-    return [outerWallRef, innerFillFloorRef, innerFillWallsRef, bodyRef, pegRef]
+    return [outerWallRef, innerFillFloorRef, innerFillPinSectionRef, innerFillWallsRef, bodyRef, pegRef]
       .map((r) => r.current)
       .filter((m): m is THREE.Mesh => m !== null);
   };
@@ -500,18 +510,29 @@ export default function Studio() {
                 </span>
               </label>
               {settings.pinHolesEnabled && (
-                <SliderRow
-                  label="Print clearance"
-                  value={settings.pinHoleRadius ?? DEFAULT_SETTINGS.pinHoleRadius}
-                  min={0}
-                  max={0.5}
-                  step={0.05}
-                  unit="mm"
-                  onChange={(v) => setSetting("pinHoleRadius", v)}
-                />
+                <>
+                  <SliderRow
+                    label="Pin section depth"
+                    value={settings.pinHoleDepth ?? DEFAULT_SETTINGS.pinHoleDepth}
+                    min={1}
+                    max={Math.max(1, (settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth) - 1)}
+                    step={0.5}
+                    unit="mm"
+                    onChange={(v) => setSetting("pinHoleDepth", v)}
+                  />
+                  <SliderRow
+                    label="Print clearance"
+                    value={settings.pinHoleRadius ?? DEFAULT_SETTINGS.pinHoleRadius}
+                    min={0}
+                    max={0.5}
+                    step={0.05}
+                    unit="mm"
+                    onChange={(v) => setSetting("pinHoleRadius", v)}
+                  />
+                </>
               )}
               <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                Punches the official Cherry MX PCB footprint through the pocket floor: Ø4 mm center guide · Ø1.8 mm retention pegs at ±5.08 mm · Ø1.5 mm electrical contacts at ±3.81 mm / −2.54 mm. Clearance adds to every radius to offset FDM over-extrusion.
+                Punches the Cherry MX 5-pin footprint into the deepest section of the pocket: Ø4 mm center guide · Ø1.8 mm retention pegs (±5.08 mm) · Ø1.5 mm contacts (±3.81 mm / −2.54 mm). The pin section sits below the 14×14 keycap square — from the pocket floor upward.
               </p>
             </div>
 
@@ -538,26 +559,31 @@ export default function Studio() {
               </h2>
               <div className="space-y-1.5 text-xs">
                 <LegendRow color="#6C63FF" label="Outer wall (ring)" />
-                <LegendRow color="#9B94FF" label="Inner fill + blind pocket" />
+                <LegendRow color="#9B94FF" label="Solid floor + keycap square walls" />
+                {settings.pinHolesEnabled && (
+                  <LegendRow color="#7C74E8" label="MX pin-hole section" />
+                )}
                 <LegendRow color="#10B981" label="Inner clicker body" />
                 <LegendRow color="#059669" label="Connector peg" />
               </div>
-              {svgState && (
-                <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-                  <p>
-                    Solid floor:{" "}
-                    <span className="font-mono font-medium text-foreground">
-                      {Math.max(1, settings.innerFillDepth - Math.min(settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth, settings.innerFillDepth - 1)).toFixed(1)} mm
-                    </span>
-                  </p>
-                  <p>
-                    Clicker recess:{" "}
-                    <span className="font-mono font-medium text-foreground">
-                      {(settings.totalDepth - settings.innerFillDepth).toFixed(1)} mm
-                    </span>
-                  </p>
-                </div>
-              )}
+              {svgState && (() => {
+                const kpd = settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth;
+                const phd = settings.pinHoleDepth ?? DEFAULT_SETTINGS.pinHoleDepth;
+                const pocketDepth = Math.min(kpd, settings.innerFillDepth - 1);
+                const floorDepth = settings.innerFillDepth - pocketDepth;
+                const pinDepth = settings.pinHolesEnabled ? Math.min(phd, pocketDepth - 1) : 0;
+                const squareDepth = pocketDepth - pinDepth;
+                return (
+                  <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                    <p>Solid floor: <span className="font-mono font-medium text-foreground">{floorDepth.toFixed(1)} mm</span></p>
+                    {settings.pinHolesEnabled && (
+                      <p>Pin section: <span className="font-mono font-medium text-foreground">{pinDepth.toFixed(1)} mm</span></p>
+                    )}
+                    <p>Keycap square: <span className="font-mono font-medium text-foreground">{squareDepth.toFixed(1)} mm</span></p>
+                    <p>Clicker recess: <span className="font-mono font-medium text-foreground">{(settings.totalDepth - settings.innerFillDepth).toFixed(1)} mm</span></p>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Actions */}
@@ -646,6 +672,7 @@ export default function Studio() {
                     svgHeight={svgState.height}
                     outerWallRef={outerWallRef}
                     innerFillFloorRef={innerFillFloorRef}
+                    innerFillPinSectionRef={innerFillPinSectionRef}
                     innerFillWallsRef={innerFillWallsRef}
                     fitCheck={fitCheckMode}
                   />
