@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "SVG Fidget Clicker"
+version = "1.0.0"
+id = "artifacts/fidget-toy"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19941
+
+[services.development]
+run = "pnpm --filter @workspace/fidget-toy run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/fidget-toy", "run", "build" ]
+publicDir = "artifacts/fidget-toy/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19941"
+BASE_PATH = "/"
