@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback, useMemo, Suspense } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useState, useRef, useCallback, useMemo, Suspense, useEffect } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, Grid } from "@react-three/drei";
 import * as THREE from "three";
 import { useLocation, Link } from "wouter";
@@ -241,6 +241,55 @@ function PlaceholderMeshes() {
       </mesh>
     </>
   );
+}
+
+// ─── Auto-fit camera ──────────────────────────────────────────────────────
+// Repositions the camera whenever the model footprint changes (targetSizeMm,
+// SVG aspect ratio, or totalDepth).  Does NOT fire on every orbit/zoom so
+// the user can still navigate freely between size changes.
+
+function AutoCamera({
+  targetSizeMm,
+  svgWidth,
+  svgHeight,
+  lockDimension,
+  totalDepth,
+}: {
+  targetSizeMm: number;
+  svgWidth: number;
+  svgHeight: number;
+  lockDimension: "width" | "height";
+  totalDepth: number;
+}) {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    const svgBase   = lockDimension === "width" ? svgWidth : svgHeight;
+    const scale     = svgBase > 0 ? targetSizeMm / svgBase : 1;
+    const modelHalfW = (svgWidth  * scale) / 2;
+    const modelHalfH = (svgHeight * scale) / 2;
+
+    // Both parts sit side-by-side; scene half-width ≈ separation + modelHalfW.
+    const separationX = Math.max(35, modelHalfW + 12);
+    const sceneHalfW  = separationX + modelHalfW;
+
+    // Bounding sphere radius with 20 % padding.
+    const sceneRadius = Math.max(sceneHalfW, modelHalfH, totalDepth / 2) * 1.2;
+
+    // FOV is 40°; half-angle = 20°.  Distance needed to fit the scene.
+    const fovRad   = (40 * Math.PI) / 180;
+    const distance = sceneRadius / Math.tan(fovRad / 2);
+
+    // Maintain the original viewing angle (camera at [0, 60, 100] → ~31° above horizontal).
+    const baseY = 60, baseZ = 100;
+    const baseMag = Math.sqrt(baseY * baseY + baseZ * baseZ);
+    camera.position.set(0, (baseY / baseMag) * distance, (baseZ / baseMag) * distance);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetSizeMm, svgWidth, svgHeight, lockDimension, totalDepth]);
+
+  return null;
 }
 
 // ─── Main component ───────────────────────────────────────────────────────
@@ -945,6 +994,16 @@ export default function Studio() {
               fadeDistance={sceneMetrics.fadeDistance}
               position={[0, sceneMetrics.gridY, 0]}
             />
+
+            {svgState && (
+              <AutoCamera
+                targetSizeMm={settings.targetSizeMm}
+                svgWidth={svgState.width}
+                svgHeight={svgState.height}
+                lockDimension={settings.lockDimension}
+                totalDepth={settings.totalDepth}
+              />
+            )}
 
             <OrbitControls makeDefault enablePan enableZoom enableRotate />
           </Canvas>
