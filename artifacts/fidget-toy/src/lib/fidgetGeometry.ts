@@ -138,21 +138,14 @@ export function createOuterShellGeometries(
   // ── True geometric inward offset → inner wall boundary ─────────────────
   // insetAmount is the actual wall thickness on every side, regardless of
   // how irregular / concave the SVG outline is.
-  const innerShape = offsetShapeInward(outerShape, insetAmount);
-  if (!innerShape) {
-    // Shape collapsed (inset > half the narrowest dimension) — fall back to
-    // a small solid block so the viewer never shows nothing.
-    const fallback = createDefaultShape(4);
-    const fallbackGeo = extrudeShape(fallback, innerFillDepth);
-    return {
-      outerWall: extrudeShape(outerShape, totalDepth),
-      innerFillFloor: fallbackGeo,
-      innerFillPinSection: null,
-      innerFillWalls: fallbackGeo,
-      zOffsets: { outerWall: 0, innerFillFloor: 0, innerFillPinSection: 0, innerFillWalls: 0 },
-      floorDepth: innerFillDepth,
-    };
-  }
+  // For complex concave shapes (e.g. a bunny with a narrow notch between the
+  // ears) the full inset may collapse the shape. Cascade to smaller offsets
+  // rather than falling back to a tiny 4 mm placeholder.
+  const innerShape: THREE.Shape =
+    offsetShapeInward(outerShape, insetAmount) ??
+    offsetShapeInward(outerShape, Math.min(insetAmount, 0.8)) ??
+    offsetShapeInward(outerShape, 0.3) ??
+    cloneShape(outerShape);
 
   // ── 1. Outer wall ring ──────────────────────────────────────────────────
   const ringShape = transformToMm(baseShape, scale, svgWidth, svgHeight);
@@ -257,28 +250,28 @@ export function createInnerClickerGeometries(
   // so it slides cleanly into the recess without binding.
   const CLEARANCE = 0.3;
   const outerShape = transformToMm(baseShape, scale, svgWidth, svgHeight);
-  const clickerShape = offsetShapeInward(outerShape, insetAmount + CLEARANCE);
+
+  // For complex concave shapes (e.g. a bunny with a narrow notch between the
+  // ears) the full inset+clearance may collapse the shape. Cascade to smaller
+  // offsets before falling back to the outer shape itself — anything is better
+  // than a tiny 4 mm placeholder that bears no resemblance to the design.
+  const clickerShape: THREE.Shape =
+    offsetShapeInward(outerShape, insetAmount + CLEARANCE) ??
+    offsetShapeInward(outerShape, CLEARANCE) ??
+    cloneShape(outerShape);
 
   // 0.01 mm outward bleed on the floor so it overlaps the walls section
   // by a tiny amount, preventing the coincident-face gap that slicers mistake
   // for separate bodies and leave as an artefact between layers.
   const FLOOR_BLEED = 0.01;
 
-  let floorGeo: THREE.BufferGeometry;
-  let wallsGeo: THREE.BufferGeometry;
-  if (clickerShape) {
-    // Solid floor — expanded outward by FLOOR_BLEED to close the slicer gap
-    const floorShape = expandShapeOutward(cloneShape(clickerShape), FLOOR_BLEED);
-    floorGeo = extrudeShape(floorShape, clickerFloorDepth);
-    // Upper section — switch housing cavity cut from the top (original size)
-    const wallsShape = cloneShape(clickerShape);
-    addSquareHole(wallsShape, clickerSquareSize);
-    wallsGeo = extrudeShape(wallsShape, clickerSquareDepth);
-  } else {
-    // Fallback: tiny solid placeholders
-    floorGeo = extrudeShape(createDefaultShape(4), clickerFloorDepth);
-    wallsGeo = extrudeShape(createDefaultShape(4), clickerSquareDepth);
-  }
+  // Solid floor — expanded outward by FLOOR_BLEED to close the slicer gap
+  const floorShape = expandShapeOutward(cloneShape(clickerShape), FLOOR_BLEED);
+  const floorGeo = extrudeShape(floorShape, clickerFloorDepth);
+  // Upper section — switch housing cavity cut from the top (original size)
+  const wallsShape = cloneShape(clickerShape);
+  addSquareHole(wallsShape, clickerSquareSize);
+  const wallsGeo = extrudeShape(wallsShape, clickerSquareDepth);
 
   // ── Actuator boss with MX cross pocket ──────────────────────────────────
   const bossRadius     = bossDiameter / 2;
@@ -337,7 +330,7 @@ function transformToMm(
   // edge that would corrupt the polygon-offset computation.
   const raw = shape.getPoints(128); // 129 points, last ≈ first for closed paths
   const pts = raw.slice(0, raw.length - 1).map(
-    (p) => new THREE.Vector2(p.x * scale - cx, -(p.y * scale - cy))
+    (p: THREE.Vector2) => new THREE.Vector2(p.x * scale - cx, -(p.y * scale - cy))
   );
   const out = new THREE.Shape();
   out.setFromPoints(pts);

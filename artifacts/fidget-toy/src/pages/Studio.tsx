@@ -345,7 +345,6 @@ export default function Studio() {
         svgData: svgState.rawSvg,
         extrudeDepth: settings.totalDepth,
         keycapSize: settings.keycapSize,
-        pegRadius: settings.pegRadius,
       };
       if (projectId) {
         await updateProject.mutateAsync({ id: projectId, data: payload });
