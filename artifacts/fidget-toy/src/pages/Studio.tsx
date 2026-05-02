@@ -114,7 +114,7 @@ function OuterShellGroup({
   );
 }
 
-// ─── Inner clicker: body + peg ────────────────────────────────────────────
+// ─── Inner clicker: body + actuator boss ──────────────────────────────────
 
 function InnerClickerGroup({
   shapes,
@@ -124,7 +124,6 @@ function InnerClickerGroup({
   clickerFloorRef,
   clickerWallsRef,
   bossRef,
-  pegRef,
   fitCheck,
 }: {
   shapes: THREE.Shape[];
@@ -134,7 +133,6 @@ function InnerClickerGroup({
   clickerFloorRef: React.RefObject<THREE.Mesh | null>;
   clickerWallsRef: React.RefObject<THREE.Mesh | null>;
   bossRef: React.RefObject<THREE.Mesh | null>;
-  pegRef: React.RefObject<THREE.Mesh | null>;
   fitCheck: boolean;
 }) {
   const geos = useMemo(
@@ -144,7 +142,7 @@ function InnerClickerGroup({
   );
 
   const { totalDepth, innerFillDepth } = settings;
-  const { clickerTotalDepth, clickerFloorDepth, bossFloorGap, bossHeight, pegHeight, pegBottomOffset } = geos;
+  const { clickerTotalDepth, clickerFloorDepth, bossFloorGap, bossHeight } = geos;
 
   // In normal mode the clicker floats beside the shell.
   // In fit-check mode it is positioned to sit exactly inside the recess.
@@ -165,9 +163,6 @@ function InnerClickerGroup({
   const wallsZ = baseZ + clickerFloorDepth;          // walls: clickerFloorDepth → top
   // Boss: starts bossFloorGap mm from absolute clicker bottom.
   const bossZ  = baseZ + bossFloorGap + bossHeight / 2;
-  // Peg: starts pegBottomOffset mm above the clicker bottom (inside the body),
-  // extends 1 mm into the cavity — does NOT push through the back face.
-  const pegZ   = baseZ + pegBottomOffset + pegHeight / 2;
 
   return (
     <group position={groupPos}>
@@ -182,10 +177,6 @@ function InnerClickerGroup({
       <mesh ref={bossRef} position={[0, 0, bossZ]} rotation={[Math.PI / 2, 0, 0]} castShadow receiveShadow>
         <primitive object={geos.boss} />
         <meshStandardMaterial color="#34D399" metalness={0.3} roughness={0.4} />
-      </mesh>
-      <mesh ref={pegRef} position={[0, 0, pegZ]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-        <primitive object={geos.peg} />
-        <meshStandardMaterial color="#059669" metalness={0.2} roughness={0.5} />
       </mesh>
     </group>
   );
@@ -240,7 +231,6 @@ export default function Studio() {
   const clickerFloorRef = useRef<THREE.Mesh | null>(null);
   const clickerWallsRef = useRef<THREE.Mesh | null>(null);
   const bossRef = useRef<THREE.Mesh | null>(null);
-  const pegRef = useRef<THREE.Mesh | null>(null);
 
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
@@ -294,7 +284,7 @@ export default function Studio() {
   const getMeshGroups = (): MeshGroups => ({
     shell: [outerWallRef, innerFillFloorRef, innerFillPinSectionRef, innerFillWallsRef]
       .map((r) => r.current).filter((m): m is THREE.Mesh => m !== null),
-    clicker: [clickerFloorRef, clickerWallsRef, bossRef, pegRef]
+    clicker: [clickerFloorRef, clickerWallsRef, bossRef]
       .map((r) => r.current).filter((m): m is THREE.Mesh => m !== null),
   });
 
@@ -643,15 +633,6 @@ export default function Studio() {
                   unit="mm"
                   onChange={(v) => setSetting("bossFloorGap", v)}
                 />
-                <SliderRow
-                  label="Peg radius"
-                  value={settings.pegRadius}
-                  min={1.5}
-                  max={6}
-                  step={0.01}
-                  unit="mm"
-                  onChange={(v) => setSetting("pegRadius", v)}
-                />
               </div>
             </div>
 
@@ -668,7 +649,6 @@ export default function Studio() {
                 )}
                 <LegendRow color="#10B981" label="Inner clicker body" />
                 <LegendRow color="#34D399" label="Actuator boss" />
-                <LegendRow color="#059669" label="Connector peg" />
               </div>
               {svgState && (() => {
                 const kpd = settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth;
@@ -807,7 +787,6 @@ export default function Studio() {
                     clickerFloorRef={clickerFloorRef}
                     clickerWallsRef={clickerWallsRef}
                     bossRef={bossRef}
-                    pegRef={pegRef}
                     fitCheck={fitCheckMode}
                   />
                 </>

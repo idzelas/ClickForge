@@ -7,7 +7,6 @@ export interface FidgetSettings {
   keycapPocketDepth: number;   // total pocket depth from top of inner fill (mm), e.g. 10
   insetAmount: number;         // true wall thickness — every interior point is exactly this far from outer wall (mm), e.g. 1.5
   keycapSize: number;          // keycap square pocket side length (mm), e.g. 14
-  pegRadius: number;           // inner clicker peg radius (mm), e.g. 3.5
   targetSizeMm: number;        // target mm for the locked SVG dimension
   lockDimension: "width" | "height";
   pinHolesEnabled: boolean;
@@ -30,7 +29,6 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   keycapPocketDepth: 10,
   insetAmount: 1.5,
   keycapSize: 14,
-  pegRadius: 3.5,
   targetSizeMm: 50,
   lockDimension: "width",
   pinHolesEnabled: false,
@@ -84,15 +82,10 @@ export interface InnerClickerGeometries {
   walls: THREE.BufferGeometry;
   /** Central actuator boss cylinder, seated inside the cavity. */
   boss: THREE.BufferGeometry;
-  peg: THREE.BufferGeometry;
   clickerTotalDepth: number;
   clickerFloorDepth: number;
   bossFloorGap: number;
   bossHeight: number;
-  /** Total height of the peg cylinder (geometry). */
-  pegHeight: number;
-  /** Distance from the absolute clicker bottom to the peg's bottom face (mm). */
-  pegBottomOffset: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +183,6 @@ export function createInnerClickerGeometries(
   const { scale } = computeScale(settings, svgWidth, svgHeight);
 
   const baseShape = svgShapes.length > 0 ? svgShapes[0] : createDefaultShape(40);
-  const { pegRadius } = settings;
   const insetAmount      = settings.insetAmount      ?? DEFAULT_SETTINGS.insetAmount;
   const keycapPocketDepth = settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth;
   const clickerTotalDepth  = settings.clickerTotalDepth  ?? DEFAULT_SETTINGS.clickerTotalDepth;
@@ -234,28 +226,14 @@ export function createInnerClickerGeometries(
   const bossRadius = bossDiameter / 2;
   const bossGeo = new THREE.CylinderGeometry(bossRadius, bossRadius, bossHeight, 48);
 
-  // Peg: starts 1 mm above the clicker bottom (same gap as the boss) and
-  // extends exactly 1 mm into the cavity above the solid floor — it never
-  // protrudes out the back face.
-  //   bottom: bossFloorGap  (1 mm from clicker base)
-  //   top:    clickerFloorDepth + 1  (1 mm above cavity floor)
-  //   height: (clickerFloorDepth + 1) − bossFloorGap
-  const pegBottomOffset = bossFloorGap;
-  const PEG_CAVITY_OVERLAP = 1.0; // mm the peg protrudes into the cavity
-  const pegHeight = (clickerFloorDepth + PEG_CAVITY_OVERLAP) - pegBottomOffset;
-  const pegGeo = new THREE.CylinderGeometry(pegRadius, pegRadius, Math.max(pegHeight, 0.5), 32);
-
   return {
     floor: floorGeo,
     walls: wallsGeo,
     boss: bossGeo,
-    peg: pegGeo,
     clickerTotalDepth,
     clickerFloorDepth,
     bossFloorGap,
     bossHeight,
-    pegHeight,
-    pegBottomOffset,
   };
 }
 
