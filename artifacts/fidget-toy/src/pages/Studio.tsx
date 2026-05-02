@@ -516,7 +516,7 @@ export default function Studio() {
                     value={settings.pinHoleDepth ?? DEFAULT_SETTINGS.pinHoleDepth}
                     min={1}
                     max={Math.max(1, (settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth) - 1)}
-                    step={0.5}
+                    step={0.1}
                     unit="mm"
                     onChange={(v) => setSetting("pinHoleDepth", v)}
                   />
