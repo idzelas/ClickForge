@@ -123,6 +123,7 @@ function InnerClickerGroup({
   svgHeight,
   clickerFloorRef,
   clickerWallsRef,
+  bossRef,
   pegRef,
   fitCheck,
 }: {
@@ -132,6 +133,7 @@ function InnerClickerGroup({
   svgHeight: number;
   clickerFloorRef: React.RefObject<THREE.Mesh | null>;
   clickerWallsRef: React.RefObject<THREE.Mesh | null>;
+  bossRef: React.RefObject<THREE.Mesh | null>;
   pegRef: React.RefObject<THREE.Mesh | null>;
   fitCheck: boolean;
 }) {
@@ -142,7 +144,7 @@ function InnerClickerGroup({
   );
 
   const { totalDepth, innerFillDepth } = settings;
-  const { clickerTotalDepth, clickerFloorDepth, pegHeight } = geos;
+  const { clickerTotalDepth, clickerFloorDepth, bossFloorGap, bossHeight, pegHeight } = geos;
 
   // In normal mode the clicker floats beside the shell.
   // In fit-check mode it is positioned to sit exactly inside the recess.
@@ -159,9 +161,12 @@ function InnerClickerGroup({
 
   // Local z origins (geo starts at 0, mesh is centred at -clickerTotalDepth/2)
   const baseZ  = -clickerTotalDepth / 2;
-  const floorZ = baseZ;                        // solid floor: 0 → clickerFloorDepth
-  const wallsZ = baseZ + clickerFloorDepth;    // walls: clickerFloorDepth → top
-  const pegZ   = baseZ - pegHeight / 2;        // peg hangs below floor
+  const floorZ = baseZ;                              // solid floor: 0 → clickerFloorDepth
+  const wallsZ = baseZ + clickerFloorDepth;          // walls: clickerFloorDepth → top
+  // Boss: starts bossFloorGap mm from absolute clicker bottom, embedding 1 mm into
+  // the solid floor section for structural anchoring.
+  const bossZ  = baseZ + bossFloorGap + bossHeight / 2;
+  const pegZ   = baseZ - pegHeight / 2;              // peg hangs below floor
 
   return (
     <group position={groupPos}>
@@ -172,6 +177,10 @@ function InnerClickerGroup({
       <mesh ref={clickerWallsRef} position={[0, 0, wallsZ]} castShadow receiveShadow>
         <primitive object={geos.walls} />
         <meshStandardMaterial color="#10B981" metalness={0.25} roughness={0.45} />
+      </mesh>
+      <mesh ref={bossRef} position={[0, 0, bossZ]} rotation={[Math.PI / 2, 0, 0]} castShadow receiveShadow>
+        <primitive object={geos.boss} />
+        <meshStandardMaterial color="#34D399" metalness={0.3} roughness={0.4} />
       </mesh>
       <mesh ref={pegRef} position={[0, 0, pegZ]} rotation={[Math.PI / 2, 0, 0]} castShadow>
         <primitive object={geos.peg} />
@@ -229,6 +238,7 @@ export default function Studio() {
   const innerFillWallsRef = useRef<THREE.Mesh | null>(null);
   const clickerFloorRef = useRef<THREE.Mesh | null>(null);
   const clickerWallsRef = useRef<THREE.Mesh | null>(null);
+  const bossRef = useRef<THREE.Mesh | null>(null);
   const pegRef = useRef<THREE.Mesh | null>(null);
 
   const createProject = useCreateProject();
@@ -279,7 +289,7 @@ export default function Studio() {
   };
 
   const getMeshes = (): THREE.Mesh[] => {
-    return [outerWallRef, innerFillFloorRef, innerFillPinSectionRef, innerFillWallsRef, clickerFloorRef, clickerWallsRef, pegRef]
+    return [outerWallRef, innerFillFloorRef, innerFillPinSectionRef, innerFillWallsRef, clickerFloorRef, clickerWallsRef, bossRef, pegRef]
       .map((r) => r.current)
       .filter((m): m is THREE.Mesh => m !== null);
   };
@@ -588,6 +598,33 @@ export default function Studio() {
                   onChange={(v) => setSetting("clickerSquareDepth", v)}
                 />
                 <SliderRow
+                  label="Boss diameter"
+                  value={settings.bossDiameter ?? DEFAULT_SETTINGS.bossDiameter}
+                  min={1}
+                  max={15}
+                  step={0.01}
+                  unit="mm"
+                  onChange={(v) => setSetting("bossDiameter", v)}
+                />
+                <SliderRow
+                  label="Boss height"
+                  value={settings.bossHeight ?? DEFAULT_SETTINGS.bossHeight}
+                  min={0.5}
+                  max={15}
+                  step={0.01}
+                  unit="mm"
+                  onChange={(v) => setSetting("bossHeight", v)}
+                />
+                <SliderRow
+                  label="Boss floor gap"
+                  value={settings.bossFloorGap ?? DEFAULT_SETTINGS.bossFloorGap}
+                  min={0}
+                  max={Math.max(0, (settings.clickerFloorDepth ?? DEFAULT_SETTINGS.clickerFloorDepth) - 0.1)}
+                  step={0.01}
+                  unit="mm"
+                  onChange={(v) => setSetting("bossFloorGap", v)}
+                />
+                <SliderRow
                   label="Peg radius"
                   value={settings.pegRadius}
                   min={1.5}
@@ -611,6 +648,7 @@ export default function Studio() {
                   <LegendRow color="#7C74E8" label="MX pin-hole section" />
                 )}
                 <LegendRow color="#10B981" label="Inner clicker body" />
+                <LegendRow color="#34D399" label="Actuator boss" />
                 <LegendRow color="#059669" label="Connector peg" />
               </div>
               {svgState && (() => {
@@ -730,6 +768,7 @@ export default function Studio() {
                     svgHeight={svgState.height}
                     clickerFloorRef={clickerFloorRef}
                     clickerWallsRef={clickerWallsRef}
+                    bossRef={bossRef}
                     pegRef={pegRef}
                     fitCheck={fitCheckMode}
                   />

@@ -18,6 +18,10 @@ export interface FidgetSettings {
   clickerFloorDepth: number;   // solid floor at bottom of clicker (mm), e.g. 2.0
   clickerSquareSize: number;   // switch housing cavity square side (mm), e.g. 16.2
   clickerSquareDepth: number;  // depth of switch housing cavity from top (mm), e.g. 7.4
+  // Actuator boss (centre cylinder inside the cavity)
+  bossDiameter: number;        // boss cylinder diameter (mm), e.g. 5.87
+  bossHeight: number;          // boss cylinder height (mm), e.g. 4.92
+  bossFloorGap: number;        // gap from clicker absolute bottom to boss start (mm), e.g. 1.0
 }
 
 export const DEFAULT_SETTINGS: FidgetSettings = {
@@ -36,6 +40,9 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   clickerFloorDepth: 2.0,
   clickerSquareSize: 16.2,
   clickerSquareDepth: 7.4,
+  bossDiameter: 5.87,
+  bossHeight: 4.92,
+  bossFloorGap: 1.0,
 };
 
 /**
@@ -75,9 +82,13 @@ export interface InnerClickerGeometries {
   floor: THREE.BufferGeometry;
   /** Upper section with switch housing cavity cut from top. */
   walls: THREE.BufferGeometry;
+  /** Central actuator boss cylinder, seated inside the cavity. */
+  boss: THREE.BufferGeometry;
   peg: THREE.BufferGeometry;
   clickerTotalDepth: number;
   clickerFloorDepth: number;
+  bossFloorGap: number;
+  bossHeight: number;
   pegHeight: number;
 }
 
@@ -179,10 +190,13 @@ export function createInnerClickerGeometries(
   const { pegRadius } = settings;
   const insetAmount      = settings.insetAmount      ?? DEFAULT_SETTINGS.insetAmount;
   const keycapPocketDepth = settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth;
-  const clickerTotalDepth = settings.clickerTotalDepth ?? DEFAULT_SETTINGS.clickerTotalDepth;
-  const clickerFloorDepth = settings.clickerFloorDepth ?? DEFAULT_SETTINGS.clickerFloorDepth;
-  const clickerSquareSize = settings.clickerSquareSize ?? DEFAULT_SETTINGS.clickerSquareSize;
+  const clickerTotalDepth  = settings.clickerTotalDepth  ?? DEFAULT_SETTINGS.clickerTotalDepth;
+  const clickerFloorDepth  = settings.clickerFloorDepth  ?? DEFAULT_SETTINGS.clickerFloorDepth;
+  const clickerSquareSize  = settings.clickerSquareSize  ?? DEFAULT_SETTINGS.clickerSquareSize;
   const clickerSquareDepth = settings.clickerSquareDepth ?? DEFAULT_SETTINGS.clickerSquareDepth;
+  const bossDiameter       = settings.bossDiameter       ?? DEFAULT_SETTINGS.bossDiameter;
+  const bossHeight         = settings.bossHeight         ?? DEFAULT_SETTINGS.bossHeight;
+  const bossFloorGap       = settings.bossFloorGap       ?? DEFAULT_SETTINGS.bossFloorGap;
 
   // The clicker's outer boundary is the inner wall shape plus 0.3 mm print clearance,
   // so it slides cleanly into the recess without binding.
@@ -205,10 +219,26 @@ export function createInnerClickerGeometries(
     wallsGeo = extrudeShape(createDefaultShape(4), clickerSquareDepth);
   }
 
+  // Actuator boss: cylinder centred in the cavity, starting bossFloorGap mm from
+  // the absolute clicker bottom (which embeds it 1 mm into the solid floor section
+  // for structural anchoring).
+  const bossRadius = bossDiameter / 2;
+  const bossGeo = new THREE.CylinderGeometry(bossRadius, bossRadius, bossHeight, 48);
+
   const pegHeight = keycapPocketDepth * 0.6;
   const pegGeo = new THREE.CylinderGeometry(pegRadius, pegRadius, pegHeight, 32);
 
-  return { floor: floorGeo, walls: wallsGeo, peg: pegGeo, clickerTotalDepth, clickerFloorDepth, pegHeight };
+  return {
+    floor: floorGeo,
+    walls: wallsGeo,
+    boss: bossGeo,
+    peg: pegGeo,
+    clickerTotalDepth,
+    clickerFloorDepth,
+    bossFloorGap,
+    bossHeight,
+    pegHeight,
+  };
 }
 
 // ---------------------------------------------------------------------------
