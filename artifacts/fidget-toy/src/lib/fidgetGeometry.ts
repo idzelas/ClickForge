@@ -2,20 +2,22 @@ import * as THREE from "three";
 
 export interface FidgetSettings {
   totalDepth: number;         // outer wall total height (mm), e.g. 22
-  innerFillDepth: number;     // total pocket block height (pocket cavity + floor), e.g. 10
+  innerFillDepth: number;     // total inner fill block height (pocket + floor), e.g. 12
+  keycapPocketDepth: number;  // keycap cavity depth from the top of inner fill (mm), e.g. 10
   insetAmount: number;        // how much inner fill is inset from outer wall edge (mm each side), e.g. 1
   keycapSize: number;         // keycap square pocket side length (mm), e.g. 14
   pegRadius: number;          // inner clicker peg radius (mm), e.g. 3.5
   targetSizeMm: number;       // target mm for the locked SVG dimension
   lockDimension: "width" | "height";
-  // MX-style contact pin holes punched through the pocket floor
+  // MX-style contact pin holes punched through the pocket walls (NOT the floor)
   pinHolesEnabled: boolean;
   pinHoleRadius: number;      // print clearance added to each MX spec radius (mm), e.g. 0.1
 }
 
 export const DEFAULT_SETTINGS: FidgetSettings = {
   totalDepth: 22,
-  innerFillDepth: 10,   // total pocket depth (cavity + floor); floor is auto-computed at ~15%
+  innerFillDepth: 12,   // total housing block (pocket cavity + solid floor)
+  keycapPocketDepth: 10, // keycap cavity depth; floor = innerFillDepth − keycapPocketDepth = 2 mm
   insetAmount: 1,
   keycapSize: 14,
   pegRadius: 3.5,
@@ -24,15 +26,6 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   pinHolesEnabled: false,
   pinHoleRadius: 0.1,
 };
-
-/**
- * Auto-compute the floor thickness from the total pocket block height.
- * Floor = ~15% of innerFillDepth, clamped to a minimum of 1.5 mm.
- * This ensures the MX pin holes + pocket cavity always fit within `innerFillDepth`.
- */
-export function computeFloorDepth(innerFillDepth: number): number {
-  return Math.max(1.5, Math.round(innerFillDepth * 0.15 * 10) / 10);
-}
 
 /**
  * Outer shell geometry broken into 3 meshes:
@@ -81,12 +74,12 @@ export function createOuterShellGeometries(
   const scaledH = svgHeight * scale;
 
   const baseShape = svgShapes.length > 0 ? svgShapes[0] : createDefaultShape(40);
-  const { totalDepth, innerFillDepth, insetAmount, keycapSize } = settings;
+  const { totalDepth, innerFillDepth, keycapPocketDepth, insetAmount, keycapSize } = settings;
 
-  // Floor is auto-computed at ~15% of innerFillDepth (min 1.5 mm).
-  // Pocket cavity = remainder above the floor.
-  const floorDepth = computeFloorDepth(innerFillDepth);
-  const pocketDepth = innerFillDepth - floorDepth;
+  // Floor = solid material below the keycap cavity.  Never less than 1 mm.
+  // Pocket walls sit on top of the floor and form the cavity opening.
+  const pocketDepth = Math.min(keycapPocketDepth, innerFillDepth - 1);
+  const floorDepth = innerFillDepth - pocketDepth; // e.g. 12 - 10 = 2 mm solid floor
 
   // Scale factor to shrink the shape inward by insetAmount on each side
   const insetFactor = computeInsetFactor(scaledW, scaledH, insetAmount);
@@ -97,18 +90,21 @@ export function createOuterShellGeometries(
   outerShape.holes.push(new THREE.Path(insetShapeForHole.getPoints(64)));
   const outerWallGeo = extrudeShape(outerShape, totalDepth);
 
-  // ── 2. Inner fill floor: solid inset shape, floorDepth tall ──
-  //    When pin holes are enabled, punch MX-style contact holes through the floor.
+  // ── 2. Inner fill floor: always solid — pin holes do NOT penetrate this layer ──
   const floorShape = transformShape(baseShape, scale * insetFactor, svgWidth, svgHeight);
-  if (settings.pinHolesEnabled) {
-    addMXPinHoles(floorShape, settings.pinHoleRadius);
-  }
   const innerFillFloorGeo = extrudeShape(floorShape, floorDepth);
 
-  // ── 3. Inner fill walls: inset shape WITH square pocket hole, pocketDepth tall ──
-  //    Sits on top of the floor. The square opening is the keycap pocket cavity.
+  // ── 3. Inner fill walls: keycap square hole + optional MX pin holes, pocketDepth tall ──
+  //    Sits on top of the floor.  MX holes stop at the floor surface — they never
+  //    exit the bottom of the model.  All standard MX pin positions (±5.08 mm,
+  //    ±3.81 mm / −2.54 mm) fall within the keycap square for default 14 mm size,
+  //    but at smaller keycapSize values the peg holes may extend outside the square
+  //    and become visible as separate guide holes in the cavity walls.
   const wallsShape = transformShape(baseShape, scale * insetFactor, svgWidth, svgHeight);
   addSquareHole(wallsShape, keycapSize);
+  if (settings.pinHolesEnabled) {
+    addMXPinHoles(wallsShape, settings.pinHoleRadius);
+  }
   const innerFillWallsGeo = extrudeShape(wallsShape, pocketDepth);
 
   return {
@@ -150,9 +146,8 @@ export function createInnerClickerGeometries(
   addSquareHole(clickerShape, keycapSize);
   const bodyGeo = extrudeShape(clickerShape, clickerDepth);
 
-  // Peg: drops into the pocket cavity (innerFillDepth minus auto floor)
-  const pocketCavity = innerFillDepth - computeFloorDepth(innerFillDepth);
-  const pegHeight = pocketCavity * 0.6;
+  // Peg: drops into the keycap cavity; sized at 60% of the pocket depth
+  const pegHeight = settings.keycapPocketDepth * 0.6;
   const pegGeo = new THREE.CylinderGeometry(pegRadius, pegRadius, pegHeight, 32);
 
   return { body: bodyGeo, peg: pegGeo, clickerDepth, pegHeight };

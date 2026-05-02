@@ -21,7 +21,6 @@ import {
   createOuterShellGeometries,
   createInnerClickerGeometries,
   DEFAULT_SETTINGS,
-  computeFloorDepth,
   type FidgetSettings,
 } from "@/lib/fidgetGeometry";
 import { exportSTL, export3MF } from "@/lib/exporters";
@@ -446,13 +445,22 @@ export default function Studio() {
                   onChange={(v) => setSetting("totalDepth", v)}
                 />
                 <SliderRow
-                  label="Pocket depth"
+                  label="Housing depth"
                   value={settings.innerFillDepth}
                   min={4}
                   max={settings.totalDepth - 2}
                   step={0.5}
                   unit="mm"
                   onChange={(v) => setSetting("innerFillDepth", v)}
+                />
+                <SliderRow
+                  label="Keycap pocket depth"
+                  value={settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth}
+                  min={2}
+                  max={settings.innerFillDepth - 1}
+                  step={0.5}
+                  unit="mm"
+                  onChange={(v) => setSetting("keycapPocketDepth", v)}
                 />
                 <SliderRow
                   label="Wall inset"
@@ -537,16 +545,9 @@ export default function Studio() {
               {svgState && (
                 <div className="mt-3 space-y-1 text-xs text-muted-foreground">
                   <p>
-                    Pocket floor:{" "}
+                    Solid floor:{" "}
                     <span className="font-mono font-medium text-foreground">
-                      {computeFloorDepth(settings.innerFillDepth).toFixed(1)} mm
-                    </span>{" "}
-                    <span className="text-muted-foreground/60">(auto)</span>
-                  </p>
-                  <p>
-                    Pocket cavity:{" "}
-                    <span className="font-mono font-medium text-foreground">
-                      {(settings.innerFillDepth - computeFloorDepth(settings.innerFillDepth)).toFixed(1)} mm
+                      {Math.max(1, settings.innerFillDepth - Math.min(settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth, settings.innerFillDepth - 1)).toFixed(1)} mm
                     </span>
                   </p>
                   <p>
