@@ -25,6 +25,10 @@ export interface FidgetSettings {
   crossSize: number;           // overall bounding box of the plus sign (mm), e.g. 4.18
   crossDepth: number;          // how deep the cross is cut (mm), e.g. 4.8
   crossArmWidth: number;       // width of each cross arm (mm), e.g. 1.31
+  // Pocket offset — shifts the keycap pocket, pin holes, switch cavity, and
+  // boss as a unit so the switch sits at the visual centre of irregular shapes.
+  pocketOffsetX: number;       // horizontal nudge (mm), positive = right
+  pocketOffsetY: number;       // vertical nudge (mm), positive = up
   // Orientation flips — mirror the part so the decorative face is on the
   // correct side for printing / assembly
   flipShell: boolean;          // flip outer shell upside-down (rotate 180° around X)
@@ -54,6 +58,8 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   crossSize: 4.18,
   crossDepth: 4.8,
   crossArmWidth: 1.31,
+  pocketOffsetX: 0,
+  pocketOffsetY: 0,
   flipShell: false,
   flipClicker: false,
   mirrorShell: false,
@@ -168,17 +174,20 @@ export function createOuterShellGeometries(
   const floorShape = cloneShape(innerShape);
   const innerFillFloorGeo = extrudeShape(floorShape, floorDepth);
 
+  const ox = settings.pocketOffsetX ?? 0;
+  const oy = settings.pocketOffsetY ?? 0;
+
   // ── 3. MX pin-hole section (deepest part of pocket) ────────────────────
   let innerFillPinSectionGeo: THREE.BufferGeometry | null = null;
   if (pinHolesEnabled && pinDepth > 0) {
     const pinShape = cloneShape(innerShape);
-    addMXPinHoles(pinShape, pinHoleRadius);
+    addMXPinHoles(pinShape, pinHoleRadius, ox, oy);
     innerFillPinSectionGeo = extrudeShape(pinShape, pinDepth);
   }
 
   // ── 4. Keycap square walls (upper / shallower part of pocket) ──────────
   const wallsShape = cloneShape(innerShape);
-  addSquareHole(wallsShape, keycapSize);
+  addSquareHole(wallsShape, keycapSize, ox, oy);
   const innerFillWallsGeo = extrudeShape(wallsShape, squareDepth);
 
   return {
@@ -196,12 +205,12 @@ export function createOuterShellGeometries(
   };
 }
 
-/** Build a circle THREE.Shape centred at the origin (replaces CylinderGeometry when holes are needed). */
-function makeCircleShape(radius: number, segments = 64): THREE.Shape {
+/** Build a circle THREE.Shape at (cx, cy). cx/cy default to 0 for backward compat. */
+function makeCircleShape(radius: number, segments = 64, cx = 0, cy = 0): THREE.Shape {
   const pts: THREE.Vector2[] = [];
   for (let i = 0; i < segments; i++) {
     const angle = (i / segments) * Math.PI * 2;
-    pts.push(new THREE.Vector2(Math.cos(angle) * radius, Math.sin(angle) * radius));
+    pts.push(new THREE.Vector2(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius));
   }
   const shape = new THREE.Shape();
   shape.setFromPoints(pts);
@@ -219,22 +228,22 @@ function makeCircleShape(radius: number, segments = 64): THREE.Shape {
  * @param totalSize  Overall bounding box of the cross (mm), e.g. 4.18.
  * @param armWidth   Width of each arm of the cross (mm), e.g. 1.31.
  */
-function addCrossHole(shape: THREE.Shape, totalSize: number, armWidth: number): void {
+function addCrossHole(shape: THREE.Shape, totalSize: number, armWidth: number, cx = 0, cy = 0): void {
   const h = totalSize / 2;
   const a = armWidth  / 2;
   const hole = new THREE.Path();
-  hole.moveTo(-a,  h);
-  hole.lineTo( a,  h);
-  hole.lineTo( a,  a);
-  hole.lineTo( h,  a);
-  hole.lineTo( h, -a);
-  hole.lineTo( a, -a);
-  hole.lineTo( a, -h);
-  hole.lineTo(-a, -h);
-  hole.lineTo(-a, -a);
-  hole.lineTo(-h, -a);
-  hole.lineTo(-h,  a);
-  hole.lineTo(-a,  a);
+  hole.moveTo(cx - a, cy + h);
+  hole.lineTo(cx + a, cy + h);
+  hole.lineTo(cx + a, cy + a);
+  hole.lineTo(cx + h, cy + a);
+  hole.lineTo(cx + h, cy - a);
+  hole.lineTo(cx + a, cy - a);
+  hole.lineTo(cx + a, cy - h);
+  hole.lineTo(cx - a, cy - h);
+  hole.lineTo(cx - a, cy - a);
+  hole.lineTo(cx - h, cy - a);
+  hole.lineTo(cx - h, cy + a);
+  hole.lineTo(cx - a, cy + a);
   hole.closePath();
   shape.holes.push(hole);
 }
@@ -278,12 +287,15 @@ export function createInnerClickerGeometries(
   // for separate bodies and leave as an artefact between layers.
   const FLOOR_BLEED = 0.01;
 
+  const ox = settings.pocketOffsetX ?? 0;
+  const oy = settings.pocketOffsetY ?? 0;
+
   // Solid floor — expanded outward by FLOOR_BLEED to close the slicer gap
   const floorShape = expandShapeOutward(cloneShape(clickerShape), FLOOR_BLEED);
   const floorGeo = extrudeShape(floorShape, clickerFloorDepth);
   // Upper section — switch housing cavity cut from the top (original size)
   const wallsShape = cloneShape(clickerShape);
-  addSquareHole(wallsShape, clickerSquareSize);
+  addSquareHole(wallsShape, clickerSquareSize, ox, oy);
   const wallsGeo = extrudeShape(wallsShape, clickerSquareDepth);
 
   // ── Actuator boss with MX cross pocket ──────────────────────────────────
@@ -296,13 +308,13 @@ export function createInnerClickerGeometries(
   const bossBaseHeight = Math.max(bossHeight - crossDepth, 0.05);
   const bossCrossDepth = bossHeight - bossBaseHeight; // actual pocket depth
 
-  // Solid base section (no hole)
-  const bossBaseShape = makeCircleShape(bossRadius, 64);
+  // Boss is offset by (ox, oy) so it stays centred on the switch cavity.
+  const bossBaseShape = makeCircleShape(bossRadius, 64, ox, oy);
   const bossBaseGeo   = extrudeShape(bossBaseShape, bossBaseHeight);
 
   // Main section: circle with MX cross pocket cut through from top to bottom
-  const bossMainShape = makeCircleShape(bossRadius, 64);
-  addCrossHole(bossMainShape, crossSize, crossArmWidth);
+  const bossMainShape = makeCircleShape(bossRadius, 64, ox, oy);
+  addCrossHole(bossMainShape, crossSize, crossArmWidth, ox, oy);
   const bossMainGeo   = extrudeShape(bossMainShape, bossCrossDepth);
 
   return {
@@ -615,7 +627,7 @@ export function validateGeometry(
  *
  * `tolerance` (mm) is added to every radius for FDM over-extrusion compensation.
  */
-function addMXPinHoles(shape: THREE.Shape, tolerance: number): void {
+function addMXPinHoles(shape: THREE.Shape, tolerance: number, cx = 0, cy = 0): void {
   const pins: [number, number, number][] = [
     [  0.00,  0.00, 2.00 ],
     [  5.08,  0.00, 0.90 ],
@@ -625,18 +637,18 @@ function addMXPinHoles(shape: THREE.Shape, tolerance: number): void {
   ];
   for (const [x, y, r] of pins) {
     const h = new THREE.Path();
-    h.absarc(x, y, r + tolerance, 0, Math.PI * 2, false);
+    h.absarc(cx + x, cy + y, r + tolerance, 0, Math.PI * 2, false);
     shape.holes.push(h);
   }
 }
 
-function addSquareHole(shape: THREE.Shape, size: number): void {
+function addSquareHole(shape: THREE.Shape, size: number, cx = 0, cy = 0): void {
   const half = size / 2;
   const hole = new THREE.Path();
-  hole.moveTo(-half, -half);
-  hole.lineTo( half, -half);
-  hole.lineTo( half,  half);
-  hole.lineTo(-half,  half);
+  hole.moveTo(cx - half, cy - half);
+  hole.lineTo(cx + half, cy - half);
+  hole.lineTo(cx + half, cy + half);
+  hole.lineTo(cx - half, cy + half);
   // Do NOT lineTo back to start — that would add a zero-length closing
   // edge that generates a degenerate NaN-normal triangle when extruded.
   hole.closePath();

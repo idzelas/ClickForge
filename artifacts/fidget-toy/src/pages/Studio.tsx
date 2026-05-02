@@ -755,6 +755,32 @@ export default function Studio() {
                   unit="mm"
                   onChange={(v) => setSetting("clickerSquareDepth", v)}
                 />
+
+                {/* Pocket position nudge */}
+                <div className="border-t border-border/40 pt-4 space-y-3">
+                  <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+                    Pocket position nudge
+                    <InfoTooltip text="Shifts the keycap pocket, switch cavity, and boss together as a unit. Use this to visually re-centre the switch on irregular or asymmetric shapes. Both parts move identically so they stay aligned." />
+                  </div>
+                  <SliderRow
+                    label="Offset X"
+                    value={settings.pocketOffsetX ?? 0}
+                    min={-20}
+                    max={20}
+                    step={0.1}
+                    unit="mm"
+                    onChange={(v) => setSetting("pocketOffsetX", v)}
+                  />
+                  <SliderRow
+                    label="Offset Y"
+                    value={settings.pocketOffsetY ?? 0}
+                    min={-20}
+                    max={20}
+                    step={0.1}
+                    unit="mm"
+                    onChange={(v) => setSetting("pocketOffsetY", v)}
+                  />
+                </div>
               </div>
             </div>
 
