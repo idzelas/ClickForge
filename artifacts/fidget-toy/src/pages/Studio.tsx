@@ -33,6 +33,7 @@ import {
   ChevronLeft,
   Box,
   Ruler,
+  Layers,
 } from "lucide-react";
 
 interface ParsedSVGState {
@@ -53,6 +54,7 @@ function OuterShellGroup({
   outerWallRef,
   innerFillFloorRef,
   innerFillWallsRef,
+  fitCheck,
 }: {
   shapes: THREE.Shape[];
   settings: FidgetSettings;
@@ -61,6 +63,7 @@ function OuterShellGroup({
   outerWallRef: React.RefObject<THREE.Mesh | null>;
   innerFillFloorRef: React.RefObject<THREE.Mesh | null>;
   innerFillWallsRef: React.RefObject<THREE.Mesh | null>;
+  fitCheck: boolean;
 }) {
   const geos = useMemo(
     () => createOuterShellGeometries(shapes, settings, svgWidth, svgHeight),
@@ -68,24 +71,32 @@ function OuterShellGroup({
     [shapes, settings, svgWidth, svgHeight]
   );
 
-  // Center the group so the outer wall is symmetric around z=0
   const groupZ = -settings.totalDepth / 2;
+  // In fit-check mode center at x=0; normal mode offset left
+  const groupX = fitCheck ? 0 : -35;
 
   return (
-    <group position={[-35, 0, groupZ]}>
-      {/* Outer wall ring — full totalDepth tall */}
-      <mesh ref={outerWallRef} position={[0, 0, geos.zOffsets.outerWall]} castShadow receiveShadow>
+    <group position={[groupX, 0, groupZ]}>
+      {/* Outer wall ring — ghost in fit-check so you can see inside */}
+      <mesh ref={outerWallRef} position={[0, 0, geos.zOffsets.outerWall]} castShadow={!fitCheck} receiveShadow>
         <primitive object={geos.outerWall} />
-        <meshStandardMaterial color="#6C63FF" metalness={0.25} roughness={0.45} />
+        <meshStandardMaterial
+          color="#6C63FF"
+          metalness={0.25}
+          roughness={0.45}
+          opacity={fitCheck ? 0.28 : 1}
+          transparent={fitCheck}
+          depthWrite={!fitCheck}
+        />
       </mesh>
 
-      {/* Inner fill — floor cap (solid, no pocket) */}
+      {/* Inner fill floor */}
       <mesh ref={innerFillFloorRef} position={[0, 0, geos.zOffsets.innerFillFloor]} castShadow receiveShadow>
         <primitive object={geos.innerFillFloor} />
         <meshStandardMaterial color="#9B94FF" metalness={0.2} roughness={0.5} />
       </mesh>
 
-      {/* Inner fill — pocket walls (ring with square opening = the blind keycap cavity) */}
+      {/* Inner fill pocket walls */}
       <mesh ref={innerFillWallsRef} position={[0, 0, geos.zOffsets.innerFillWalls]} castShadow receiveShadow>
         <primitive object={geos.innerFillWalls} />
         <meshStandardMaterial color="#9B94FF" metalness={0.2} roughness={0.5} />
@@ -103,6 +114,7 @@ function InnerClickerGroup({
   svgHeight,
   bodyRef,
   pegRef,
+  fitCheck,
 }: {
   shapes: THREE.Shape[];
   settings: FidgetSettings;
@@ -110,6 +122,7 @@ function InnerClickerGroup({
   svgHeight: number;
   bodyRef: React.RefObject<THREE.Mesh | null>;
   pegRef: React.RefObject<THREE.Mesh | null>;
+  fitCheck: boolean;
 }) {
   const geos = useMemo(
     () => createInnerClickerGeometries(shapes, settings, svgWidth, svgHeight),
@@ -117,12 +130,28 @@ function InnerClickerGroup({
     [shapes, settings, svgWidth, svgHeight]
   );
 
-  // Center body; peg hangs below it
-  const bodyZ = -geos.clickerDepth / 2;
-  const pegZ = -geos.clickerDepth / 2 - geos.pegHeight / 2;
+  const { totalDepth, innerFillDepth } = settings;
+  const { clickerDepth, pegHeight } = geos;
+
+  // In normal mode the clicker floats beside the shell.
+  // In fit-check mode it is positioned to sit exactly inside the recess.
+  //   Recess bottom (world z) = -totalDepth/2 + innerFillDepth
+  //   Clicker body local geo: 0 → clickerDepth; mesh offset: bodyZ = -clickerDepth/2
+  //   → groupZ so that (groupZ + bodyZ) = recess bottom
+  //   → groupZ = -totalDepth/2 + innerFillDepth + clickerDepth/2
+  const normalGroupPos: [number, number, number] = [35, 0, 0];
+  const fitCheckGroupPos: [number, number, number] = [
+    0,
+    0,
+    -totalDepth / 2 + innerFillDepth + clickerDepth / 2,
+  ];
+  const groupPos = fitCheck ? fitCheckGroupPos : normalGroupPos;
+
+  const bodyZ = -clickerDepth / 2;
+  const pegZ = -clickerDepth / 2 - pegHeight / 2;
 
   return (
-    <group position={[35, 0, 0]}>
+    <group position={groupPos}>
       <mesh ref={bodyRef} position={[0, 0, bodyZ]} castShadow receiveShadow>
         <primitive object={geos.body} />
         <meshStandardMaterial color="#10B981" metalness={0.25} roughness={0.45} />
@@ -174,6 +203,7 @@ export default function Studio() {
   const [projectId, setProjectId] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [settings, setSettings] = useState<FidgetSettings>(DEFAULT_SETTINGS);
+  const [fitCheckMode, setFitCheckMode] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const outerWallRef = useRef<THREE.Mesh | null>(null);
@@ -572,6 +602,29 @@ export default function Studio() {
             </div>
           )}
 
+          {/* ── Fit-check toggle ── */}
+          {svgState && (
+            <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+              <button
+                onClick={() => setFitCheckMode((v) => !v)}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium border transition-colors ${
+                  fitCheckMode
+                    ? "bg-indigo-600 border-indigo-500 text-white shadow-lg"
+                    : "bg-background/80 border-border text-muted-foreground hover:text-foreground backdrop-blur-sm"
+                }`}
+                title="Toggle fit-check view — snap pieces together to verify pocket & recess alignment"
+              >
+                <Layers className="h-3.5 w-3.5" />
+                Fit Check
+              </button>
+              {fitCheckMode && (
+                <span className="text-[10px] text-indigo-300/80 bg-indigo-950/60 border border-indigo-800/40 rounded px-2 py-1 backdrop-blur-sm">
+                  Outer shell ghosted · clicker seated in recess
+                </span>
+              )}
+            </div>
+          )}
+
           <Canvas
             camera={{ position: [0, 60, 100], fov: 40 }}
             shadows
@@ -594,6 +647,7 @@ export default function Studio() {
                     outerWallRef={outerWallRef}
                     innerFillFloorRef={innerFillFloorRef}
                     innerFillWallsRef={innerFillWallsRef}
+                    fitCheck={fitCheckMode}
                   />
                   <InnerClickerGroup
                     shapes={svgState.shapes}
@@ -602,6 +656,7 @@ export default function Studio() {
                     svgHeight={svgState.height}
                     bodyRef={bodyRef}
                     pegRef={pegRef}
+                    fitCheck={fitCheckMode}
                   />
                 </>
               ) : (
