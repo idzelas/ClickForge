@@ -43,7 +43,7 @@ interface ParsedSVGState {
   fileName: string;
 }
 
-// ─── Outer shell: 3 separate meshes in a group ────────────────────────────
+// ─── Outer shell: outer wall ring + inner fill (floor + pocket walls) ────
 
 function OuterShellGroup({
   shapes,
@@ -51,16 +51,16 @@ function OuterShellGroup({
   svgWidth,
   svgHeight,
   outerWallRef,
-  innerFillRef,
-  keycapHousingRef,
+  innerFillFloorRef,
+  innerFillWallsRef,
 }: {
   shapes: THREE.Shape[];
   settings: FidgetSettings;
   svgWidth: number;
   svgHeight: number;
   outerWallRef: React.RefObject<THREE.Mesh | null>;
-  innerFillRef: React.RefObject<THREE.Mesh | null>;
-  keycapHousingRef: React.RefObject<THREE.Mesh | null>;
+  innerFillFloorRef: React.RefObject<THREE.Mesh | null>;
+  innerFillWallsRef: React.RefObject<THREE.Mesh | null>;
 }) {
   const geos = useMemo(
     () => createOuterShellGeometries(shapes, settings, svgWidth, svgHeight),
@@ -68,28 +68,27 @@ function OuterShellGroup({
     [shapes, settings, svgWidth, svgHeight]
   );
 
-  const { totalDepth } = settings;
-  // Center the whole group vertically so totalDepth is symmetric around y=0
-  const groupZ = -totalDepth / 2;
+  // Center the group so the outer wall is symmetric around z=0
+  const groupZ = -settings.totalDepth / 2;
 
   return (
     <group position={[-35, 0, groupZ]}>
-      {/* Outer wall ring */}
+      {/* Outer wall ring — full totalDepth tall */}
       <mesh ref={outerWallRef} position={[0, 0, geos.zOffsets.outerWall]} castShadow receiveShadow>
         <primitive object={geos.outerWall} />
         <meshStandardMaterial color="#6C63FF" metalness={0.25} roughness={0.45} />
       </mesh>
 
-      {/* Inner fill (floor) */}
-      <mesh ref={innerFillRef} position={[0, 0, geos.zOffsets.innerFill]} castShadow receiveShadow>
-        <primitive object={geos.innerFill} />
+      {/* Inner fill — floor cap (solid, no pocket) */}
+      <mesh ref={innerFillFloorRef} position={[0, 0, geos.zOffsets.innerFillFloor]} castShadow receiveShadow>
+        <primitive object={geos.innerFillFloor} />
         <meshStandardMaterial color="#9B94FF" metalness={0.2} roughness={0.5} />
       </mesh>
 
-      {/* Keycap housing rim */}
-      <mesh ref={keycapHousingRef} position={[0, 0, geos.zOffsets.keycapHousing]} castShadow receiveShadow>
-        <primitive object={geos.keycapHousing} />
-        <meshStandardMaterial color="#4B47CC" metalness={0.3} roughness={0.4} />
+      {/* Inner fill — pocket walls (ring with square opening = the blind keycap cavity) */}
+      <mesh ref={innerFillWallsRef} position={[0, 0, geos.zOffsets.innerFillWalls]} castShadow receiveShadow>
+        <primitive object={geos.innerFillWalls} />
+        <meshStandardMaterial color="#9B94FF" metalness={0.2} roughness={0.5} />
       </mesh>
     </group>
   );
@@ -118,27 +117,17 @@ function InnerClickerGroup({
     [shapes, settings, svgWidth, svgHeight]
   );
 
-  const { totalDepth, innerFillDepth, pegRadius } = settings;
-  const recessDepth = totalDepth - innerFillDepth;
-  const clickerDepth = recessDepth - 1;
-  const pegHeight = innerFillDepth * 0.6;
-
-  // Center clicker vertically
-  const groupZ = -clickerDepth / 2;
-  const pegZ = -clickerDepth / 2 - pegHeight / 2;
+  // Center body; peg hangs below it
+  const bodyZ = -geos.clickerDepth / 2;
+  const pegZ = -geos.clickerDepth / 2 - geos.pegHeight / 2;
 
   return (
     <group position={[35, 0, 0]}>
-      <mesh ref={bodyRef} position={[0, 0, groupZ]} castShadow receiveShadow>
+      <mesh ref={bodyRef} position={[0, 0, bodyZ]} castShadow receiveShadow>
         <primitive object={geos.body} />
         <meshStandardMaterial color="#10B981" metalness={0.25} roughness={0.45} />
       </mesh>
-      <mesh
-        ref={pegRef}
-        position={[0, 0, pegZ]}
-        rotation={[Math.PI / 2, 0, 0]}
-        castShadow
-      >
+      <mesh ref={pegRef} position={[0, 0, pegZ]} rotation={[Math.PI / 2, 0, 0]} castShadow>
         <primitive object={geos.peg} />
         <meshStandardMaterial color="#059669" metalness={0.2} roughness={0.5} />
       </mesh>
@@ -188,8 +177,8 @@ export default function Studio() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const outerWallRef = useRef<THREE.Mesh | null>(null);
-  const innerFillRef = useRef<THREE.Mesh | null>(null);
-  const keycapHousingRef = useRef<THREE.Mesh | null>(null);
+  const innerFillFloorRef = useRef<THREE.Mesh | null>(null);
+  const innerFillWallsRef = useRef<THREE.Mesh | null>(null);
   const bodyRef = useRef<THREE.Mesh | null>(null);
   const pegRef = useRef<THREE.Mesh | null>(null);
 
@@ -241,7 +230,7 @@ export default function Studio() {
   };
 
   const getMeshes = (): THREE.Mesh[] => {
-    return [outerWallRef, innerFillRef, keycapHousingRef, bodyRef, pegRef]
+    return [outerWallRef, innerFillFloorRef, innerFillWallsRef, bodyRef, pegRef]
       .map((r) => r.current)
       .filter((m): m is THREE.Mesh => m !== null);
   };
@@ -435,6 +424,15 @@ export default function Studio() {
                   onChange={(v) => setSetting("innerFillDepth", v)}
                 />
                 <SliderRow
+                  label="Keycap pocket depth"
+                  value={settings.keycapPocketDepth}
+                  min={2}
+                  max={settings.innerFillDepth - 1}
+                  step={0.5}
+                  unit="mm"
+                  onChange={(v) => setSetting("keycapPocketDepth", v)}
+                />
+                <SliderRow
                   label="Wall inset"
                   value={settings.insetAmount}
                   min={0.5}
@@ -477,19 +475,26 @@ export default function Studio() {
                 Parts
               </h2>
               <div className="space-y-1.5 text-xs">
-                <LegendRow color="#6C63FF" label="Outer wall (ring, 22mm)" />
-                <LegendRow color="#9B94FF" label="Inner fill (floor, 12mm)" />
-                <LegendRow color="#4B47CC" label="Keycap housing (rim)" />
+                <LegendRow color="#6C63FF" label="Outer wall (ring)" />
+                <LegendRow color="#9B94FF" label="Inner fill + blind pocket" />
                 <LegendRow color="#10B981" label="Inner clicker body" />
                 <LegendRow color="#059669" label="Connector peg" />
               </div>
               {svgState && (
-                <p className="text-xs text-muted-foreground mt-3">
-                  Recess for inner clicker:{" "}
-                  <span className="font-mono font-medium text-foreground">
-                    {(settings.totalDepth - settings.innerFillDepth).toFixed(1)} mm
-                  </span>
-                </p>
+                <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                  <p>
+                    Pocket floor:{" "}
+                    <span className="font-mono font-medium text-foreground">
+                      {Math.max(0, settings.innerFillDepth - settings.keycapPocketDepth).toFixed(1)} mm
+                    </span>
+                  </p>
+                  <p>
+                    Clicker recess:{" "}
+                    <span className="font-mono font-medium text-foreground">
+                      {(settings.totalDepth - settings.innerFillDepth).toFixed(1)} mm
+                    </span>
+                  </p>
+                </div>
               )}
             </div>
 
@@ -555,8 +560,8 @@ export default function Studio() {
                     svgWidth={svgState.width}
                     svgHeight={svgState.height}
                     outerWallRef={outerWallRef}
-                    innerFillRef={innerFillRef}
-                    keycapHousingRef={keycapHousingRef}
+                    innerFillFloorRef={innerFillFloorRef}
+                    innerFillWallsRef={innerFillWallsRef}
                   />
                   <InnerClickerGroup
                     shapes={svgState.shapes}
