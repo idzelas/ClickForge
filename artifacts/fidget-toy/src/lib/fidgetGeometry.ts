@@ -470,6 +470,115 @@ function computeScale(s: FidgetSettings, w: number, h: number): { scale: number 
   return { scale: base > 0 ? s.targetSizeMm / base : 1 };
 }
 
+// ---------------------------------------------------------------------------
+// Geometry validation
+// ---------------------------------------------------------------------------
+
+export type GeometryWarningSeverity = "error" | "warning";
+
+export interface GeometryWarning {
+  part: "shell" | "clicker";
+  severity: GeometryWarningSeverity;
+  message: string;
+}
+
+/**
+ * Sample the bounding box (width × height in mm) of a world-space shape.
+ * Uses 128 samples — enough resolution for any SVG outline we'll encounter.
+ */
+function boundingBoxMm(shape: THREE.Shape): { w: number; h: number } {
+  const pts = shape.getPoints(128);
+  if (pts.length === 0) return { w: 0, h: 0 };
+  let minX = pts[0].x, maxX = pts[0].x;
+  let minY = pts[0].y, maxY = pts[0].y;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { w: maxX - minX, h: maxY - minY };
+}
+
+/**
+ * Validate that the current SVG + settings combination won't produce
+ * degenerate geometry (features larger than the space available for them).
+ *
+ * Returns an array of warnings/errors describing each collision.
+ * Returns [] when everything is fine or when no SVG has been loaded yet.
+ */
+export function validateGeometry(
+  svgShapes: THREE.Shape[],
+  settings: FidgetSettings,
+  svgWidth: number,
+  svgHeight: number
+): GeometryWarning[] {
+  if (!svgShapes.length || svgWidth <= 0 || svgHeight <= 0) return [];
+
+  const warnings: GeometryWarning[] = [];
+  const base = settings.lockDimension === "width" ? svgWidth : svgHeight;
+  const scale = base > 0 ? settings.targetSizeMm / base : 1;
+  const baseShape = svgShapes[0];
+
+  const insetAmount      = settings.insetAmount      ?? DEFAULT_SETTINGS.insetAmount;
+  const keycapSize       = settings.keycapSize       ?? DEFAULT_SETTINGS.keycapSize;
+  const clickerSquareSize = settings.clickerSquareSize ?? DEFAULT_SETTINGS.clickerSquareSize;
+  const bossDiameter     = settings.bossDiameter     ?? DEFAULT_SETTINGS.bossDiameter;
+  const CLEARANCE = 0.3;
+
+  // ── Outer shell: inner fill region must fit the keycap pocket ────────────
+  const shellOuter = transformToMm(baseShape, scale, svgWidth, svgHeight, settings.mirrorShell ?? false);
+  const shellInner =
+    offsetShapeInward(shellOuter, insetAmount) ??
+    offsetShapeInward(shellOuter, Math.min(insetAmount, 0.8)) ??
+    offsetShapeInward(shellOuter, 0.3) ??
+    cloneShape(shellOuter);
+  const { w: shellW, h: shellH } = boundingBoxMm(shellInner);
+
+  if (shellW < keycapSize || shellH < keycapSize) {
+    warnings.push({
+      part: "shell",
+      severity: "error",
+      message:
+        `Shell interior is ${shellW.toFixed(1)} × ${shellH.toFixed(1)} mm — ` +
+        `too small for the ${keycapSize} × ${keycapSize} mm keycap pocket. ` +
+        `Increase model size or reduce "Keycap square".`,
+    });
+  }
+
+  // ── Inner clicker: body must fit the switch housing cavity ───────────────
+  const clickerOuter = transformToMm(baseShape, scale, svgWidth, svgHeight, settings.mirrorClicker ?? false);
+  const clickerBody =
+    offsetShapeInward(clickerOuter, insetAmount + CLEARANCE) ??
+    offsetShapeInward(clickerOuter, CLEARANCE) ??
+    cloneShape(clickerOuter);
+  const { w: clickerW, h: clickerH } = boundingBoxMm(clickerBody);
+
+  if (clickerW < clickerSquareSize || clickerH < clickerSquareSize) {
+    warnings.push({
+      part: "clicker",
+      severity: "error",
+      message:
+        `Clicker interior is ${clickerW.toFixed(1)} × ${clickerH.toFixed(1)} mm — ` +
+        `too small for the ${clickerSquareSize} × ${clickerSquareSize} mm switch cavity. ` +
+        `Increase model size or reduce "Switch cavity size".`,
+    });
+  }
+
+  // ── Boss diameter must fit inside the switch cavity ──────────────────────
+  if (bossDiameter > clickerSquareSize) {
+    warnings.push({
+      part: "clicker",
+      severity: "error",
+      message:
+        `Boss diameter (${bossDiameter.toFixed(2)} mm) exceeds the switch cavity ` +
+        `(${clickerSquareSize} × ${clickerSquareSize} mm). Reduce "Boss diameter".`,
+    });
+  }
+
+  return warnings;
+}
+
 /**
  * Punches the Cherry MX 5-pin PCB footprint holes through a shape.
  * Coordinates measured from diagram (Gemini analysis), all units mm.

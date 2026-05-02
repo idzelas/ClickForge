@@ -20,8 +20,10 @@ import { parseSVGContent } from "@/lib/svgParser";
 import {
   createOuterShellGeometries,
   createInnerClickerGeometries,
+  validateGeometry,
   DEFAULT_SETTINGS,
   type FidgetSettings,
+  type GeometryWarning,
 } from "@/lib/fidgetGeometry";
 import { exportSTL, export3MF, exportSTLMerged, export3MFMerged, type MeshGroups } from "@/lib/exporters";
 import {
@@ -34,6 +36,7 @@ import {
   Box,
   Ruler,
   Layers,
+  AlertTriangle,
 } from "lucide-react";
 
 interface ParsedSVGState {
@@ -241,6 +244,14 @@ export default function Studio() {
   const [isDragging, setIsDragging] = useState(false);
   const [settings, setSettings] = useState<FidgetSettings>(DEFAULT_SETTINGS);
   const [fitCheckMode, setFitCheckMode] = useState(false);
+
+  const geoWarnings = useMemo<GeometryWarning[]>(
+    () => svgState
+      ? validateGeometry(svgState.shapes, settings, svgState.width, svgState.height)
+      : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [svgState, settings]
+  );
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const outerWallRef = useRef<THREE.Mesh | null>(null);
@@ -485,6 +496,25 @@ export default function Studio() {
                 </div>
               </div>
             </div>
+
+            {/* Geometry warnings */}
+            {geoWarnings.length > 0 && (
+              <div className="space-y-2">
+                {geoWarnings.map((w, i) => (
+                  <div
+                    key={i}
+                    className={`flex gap-2 rounded-lg px-3 py-2.5 text-xs leading-snug border ${
+                      w.severity === "error"
+                        ? "bg-red-950/60 border-red-800/50 text-red-200"
+                        : "bg-amber-950/60 border-amber-800/50 text-amber-200"
+                    }`}
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>{w.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Outer shell dimensions */}
             <div>
