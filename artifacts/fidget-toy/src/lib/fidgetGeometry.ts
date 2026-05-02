@@ -271,23 +271,24 @@ function computeScale(s: FidgetSettings, w: number, h: number): { scale: number 
 }
 
 /**
- * Punches the official Cherry MX 5-pin PCB footprint holes through a shape.
+ * Punches the Cherry MX 5-pin PCB footprint holes through a shape.
+ * Coordinates measured from diagram (Gemini analysis), all units mm.
  *
- *   Center guide pin:       ( 0.00,  0.00)  Ø 4.0 mm  r = 2.00
- *   Left  retention peg:    (-5.08,  0.00)  Ø 1.8 mm  r = 0.90
- *   Right retention peg:    (+5.08,  0.00)  Ø 1.8 mm  r = 0.90
- *   Left  electrical pin:   (-3.81, -2.54)  Ø 1.5 mm  r = 0.75
- *   Right electrical pin:   (+3.81, -2.54)  Ø 1.5 mm  r = 0.75
+ *   Center guide pin:    ( 0.00,  0.00)  Ø 4.0 mm (+0.1/-0 tol)  r = 2.00
+ *   Right peg:           (+5.08,  0.00)  Ø 1.8 mm                 r = 0.90
+ *   Left  peg:           (-5.08,  0.00)  Ø 1.8 mm                 r = 0.90
+ *   Upper-right pin:     (+2.54, +5.08)  Ø 1.5 mm                 r = 0.75
+ *   Upper-left  pin:     (-3.81, +2.54)  Ø 1.5 mm                 r = 0.75
  *
  * `tolerance` (mm) is added to every radius for FDM over-extrusion compensation.
  */
 function addMXPinHoles(shape: THREE.Shape, tolerance: number): void {
   const pins: [number, number, number][] = [
     [  0.00,  0.00, 2.00 ],
-    [ -5.08,  0.00, 0.90 ],
     [  5.08,  0.00, 0.90 ],
-    [ -3.81, -2.54, 0.75 ],
-    [  3.81, -2.54, 0.75 ],
+    [ -5.08,  0.00, 0.90 ],
+    [  2.54,  5.08, 0.75 ],
+    [ -3.81,  2.54, 0.75 ],
   ];
   for (const [x, y, r] of pins) {
     const h = new THREE.Path();
