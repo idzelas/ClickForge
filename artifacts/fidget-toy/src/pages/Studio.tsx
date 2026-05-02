@@ -937,11 +937,11 @@ export default function Studio() {
             <Grid
               args={[sceneMetrics.gridSize, sceneMetrics.gridSize]}
               cellSize={sceneMetrics.cellSize}
-              cellThickness={0.5}
-              cellColor="#1e1e2e"
+              cellThickness={1}
+              cellColor="#2a2a42"
               sectionSize={sceneMetrics.sectionSize}
-              sectionThickness={1}
-              sectionColor="#2e2e4e"
+              sectionThickness={1.8}
+              sectionColor="#4a4a72"
               fadeDistance={sceneMetrics.fadeDistance}
               position={[0, sceneMetrics.gridY, 0]}
             />
