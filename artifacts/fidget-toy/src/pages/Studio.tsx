@@ -453,6 +453,38 @@ export default function Studio() {
               </div>
             </div>
 
+            {/* Switch pin holes */}
+            <div>
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+                Switch Pin Holes
+              </h2>
+              <label className="flex items-center gap-2 cursor-pointer select-none mb-3">
+                <input
+                  type="checkbox"
+                  checked={settings.pinHolesEnabled}
+                  onChange={(e) => setSetting("pinHolesEnabled", e.target.checked)}
+                  className="h-4 w-4 rounded accent-primary"
+                />
+                <span className="text-sm">
+                  MX-style contact holes
+                </span>
+              </label>
+              {settings.pinHolesEnabled && (
+                <SliderRow
+                  label="Pin hole radius"
+                  value={settings.pinHoleRadius}
+                  min={0.4}
+                  max={2}
+                  step={0.1}
+                  unit="mm"
+                  onChange={(v) => setSetting("pinHoleRadius", v)}
+                />
+              )}
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Adds 1 center guide hole + 4 contact pin holes through the pocket floor — lets a real MX switch snap in.
+              </p>
+            </div>
+
             {/* Inner clicker dimensions */}
             <div>
               <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">

@@ -9,6 +9,9 @@ export interface FidgetSettings {
   pegRadius: number;          // inner clicker peg radius (mm), e.g. 3.5
   targetSizeMm: number;       // target mm for the locked SVG dimension
   lockDimension: "width" | "height";
+  // MX-style contact pin holes punched through the pocket floor
+  pinHolesEnabled: boolean;
+  pinHoleRadius: number;      // radius of each contact pin hole (mm), e.g. 0.9
 }
 
 export const DEFAULT_SETTINGS: FidgetSettings = {
@@ -20,6 +23,8 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   pegRadius: 3.5,
   targetSizeMm: 50,
   lockDimension: "width",
+  pinHolesEnabled: false,
+  pinHoleRadius: 0.9,
 };
 
 /**
@@ -83,9 +88,12 @@ export function createOuterShellGeometries(
   outerShape.holes.push(new THREE.Path(insetShapeForHole.getPoints(64)));
   const outerWallGeo = extrudeShape(outerShape, totalDepth);
 
-  // ── 2. Inner fill floor: solid inset shape (NO holes), floorDepth tall ──
-  //    This is the material beneath the keycap pocket — pocket does not poke through.
+  // ── 2. Inner fill floor: solid inset shape, floorDepth tall ──
+  //    When pin holes are enabled, punch MX-style contact holes through the floor.
   const floorShape = transformShape(baseShape, scale * insetFactor, svgWidth, svgHeight);
+  if (settings.pinHolesEnabled) {
+    addMXPinHoles(floorShape, settings.keycapSize, settings.pinHoleRadius);
+  }
   const innerFillFloorGeo = extrudeShape(floorShape, floorDepth);
 
   // ── 3. Inner fill walls: inset shape WITH square pocket hole, pocketDepth tall ──
@@ -166,6 +174,32 @@ function transformShape(shape: THREE.Shape, scale: number, svgWidth: number, svg
     out.holes.push(h);
   }
   return out;
+}
+
+/**
+ * Punches MX-style pin holes through a shape:
+ *   - 1 center guide hole (radius × 2)
+ *   - 4 contact pin holes at the diagonal corners inside the keycap square
+ *
+ * All holes stay well inside the keycap pocket (keycapSize × keycapSize).
+ */
+function addMXPinHoles(shape: THREE.Shape, keycapSize: number, pinHoleRadius: number): void {
+  const guideRadius = pinHoleRadius * 2;
+  const spacing = keycapSize * 0.22; // e.g. 3.1mm for 14mm pocket
+
+  // Center guide hole
+  const center = new THREE.Path();
+  center.absarc(0, 0, guideRadius, 0, Math.PI * 2, false);
+  shape.holes.push(center);
+
+  // 4 contact pin holes at (±spacing, ±spacing)
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      const h = new THREE.Path();
+      h.absarc(sx * spacing, sy * spacing, pinHoleRadius, 0, Math.PI * 2, false);
+      shape.holes.push(h);
+    }
+  }
 }
 
 function addSquareHole(shape: THREE.Shape, size: number): void {
