@@ -2,17 +2,22 @@ import * as THREE from "three";
 import { insetPolygon } from "./polygonOffset";
 
 export interface FidgetSettings {
-  totalDepth: number;         // outer wall total height (mm), e.g. 22
-  innerFillDepth: number;     // total inner fill block height (pocket + floor), e.g. 12
-  keycapPocketDepth: number;  // total pocket depth from top of inner fill (mm), e.g. 10
-  insetAmount: number;        // true wall thickness — every interior point is exactly this far from outer wall (mm), e.g. 1.5
-  keycapSize: number;         // keycap square pocket side length (mm), e.g. 14
-  pegRadius: number;          // inner clicker peg radius (mm), e.g. 3.5
-  targetSizeMm: number;       // target mm for the locked SVG dimension
+  totalDepth: number;          // outer wall total height (mm), e.g. 22
+  innerFillDepth: number;      // total inner fill block height (pocket + floor), e.g. 12
+  keycapPocketDepth: number;   // total pocket depth from top of inner fill (mm), e.g. 10
+  insetAmount: number;         // true wall thickness — every interior point is exactly this far from outer wall (mm), e.g. 1.5
+  keycapSize: number;          // keycap square pocket side length (mm), e.g. 14
+  pegRadius: number;           // inner clicker peg radius (mm), e.g. 3.5
+  targetSizeMm: number;        // target mm for the locked SVG dimension
   lockDimension: "width" | "height";
   pinHolesEnabled: boolean;
-  pinHoleRadius: number;      // print clearance added to each MX spec radius (mm), e.g. 0.1
-  pinHoleDepth: number;       // depth of pin-hole section at deepest end of pocket (mm), e.g. 3
+  pinHoleRadius: number;       // print clearance added to each MX spec radius (mm), e.g. 0.1
+  pinHoleDepth: number;        // depth of pin-hole section at deepest end of pocket (mm), e.g. 3
+  // Inner clicker geometry
+  clickerTotalDepth: number;   // total clicker height (mm), e.g. 9.4
+  clickerFloorDepth: number;   // solid floor at bottom of clicker (mm), e.g. 2.0
+  clickerSquareSize: number;   // switch housing cavity square side (mm), e.g. 16.2
+  clickerSquareDepth: number;  // depth of switch housing cavity from top (mm), e.g. 7.4
 }
 
 export const DEFAULT_SETTINGS: FidgetSettings = {
@@ -27,6 +32,10 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   pinHolesEnabled: false,
   pinHoleRadius: 0.1,
   pinHoleDepth: 3,
+  clickerTotalDepth: 9.4,
+  clickerFloorDepth: 2.0,
+  clickerSquareSize: 16.2,
+  clickerSquareDepth: 7.4,
 };
 
 /**
@@ -62,9 +71,13 @@ export interface OuterShellGeometries {
 }
 
 export interface InnerClickerGeometries {
-  body: THREE.BufferGeometry;
+  /** Solid bottom section (no cavity). */
+  floor: THREE.BufferGeometry;
+  /** Upper section with switch housing cavity cut from top. */
+  walls: THREE.BufferGeometry;
   peg: THREE.BufferGeometry;
-  clickerDepth: number;
+  clickerTotalDepth: number;
+  clickerFloorDepth: number;
   pegHeight: number;
 }
 
@@ -163,12 +176,13 @@ export function createInnerClickerGeometries(
   const { scale } = computeScale(settings, svgWidth, svgHeight);
 
   const baseShape = svgShapes.length > 0 ? svgShapes[0] : createDefaultShape(40);
-  const { totalDepth, innerFillDepth, keycapSize, pegRadius } = settings;
-  const insetAmount = settings.insetAmount ?? DEFAULT_SETTINGS.insetAmount;
+  const { pegRadius } = settings;
+  const insetAmount      = settings.insetAmount      ?? DEFAULT_SETTINGS.insetAmount;
   const keycapPocketDepth = settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth;
-
-  const recessDepth = totalDepth - innerFillDepth;
-  const clickerDepth = Math.max(1, recessDepth - 1);
+  const clickerTotalDepth = settings.clickerTotalDepth ?? DEFAULT_SETTINGS.clickerTotalDepth;
+  const clickerFloorDepth = settings.clickerFloorDepth ?? DEFAULT_SETTINGS.clickerFloorDepth;
+  const clickerSquareSize = settings.clickerSquareSize ?? DEFAULT_SETTINGS.clickerSquareSize;
+  const clickerSquareDepth = settings.clickerSquareDepth ?? DEFAULT_SETTINGS.clickerSquareDepth;
 
   // The clicker's outer boundary is the inner wall shape plus 0.3 mm print clearance,
   // so it slides cleanly into the recess without binding.
@@ -176,19 +190,25 @@ export function createInnerClickerGeometries(
   const outerShape = transformToMm(baseShape, scale, svgWidth, svgHeight);
   const clickerShape = offsetShapeInward(outerShape, insetAmount + CLEARANCE);
 
-  let bodyGeo: THREE.BufferGeometry;
+  let floorGeo: THREE.BufferGeometry;
+  let wallsGeo: THREE.BufferGeometry;
   if (clickerShape) {
-    addSquareHole(clickerShape, keycapSize);
-    bodyGeo = extrudeShape(clickerShape, clickerDepth);
+    // Solid floor — no cavity
+    floorGeo = extrudeShape(cloneShape(clickerShape), clickerFloorDepth);
+    // Upper section — switch housing cavity cut from the top
+    const wallsShape = cloneShape(clickerShape);
+    addSquareHole(wallsShape, clickerSquareSize);
+    wallsGeo = extrudeShape(wallsShape, clickerSquareDepth);
   } else {
-    // Fallback: tiny placeholder
-    bodyGeo = extrudeShape(createDefaultShape(4), clickerDepth);
+    // Fallback: tiny solid placeholders
+    floorGeo = extrudeShape(createDefaultShape(4), clickerFloorDepth);
+    wallsGeo = extrudeShape(createDefaultShape(4), clickerSquareDepth);
   }
 
   const pegHeight = keycapPocketDepth * 0.6;
   const pegGeo = new THREE.CylinderGeometry(pegRadius, pegRadius, pegHeight, 32);
 
-  return { body: bodyGeo, peg: pegGeo, clickerDepth, pegHeight };
+  return { floor: floorGeo, walls: wallsGeo, peg: pegGeo, clickerTotalDepth, clickerFloorDepth, pegHeight };
 }
 
 // ---------------------------------------------------------------------------

@@ -121,7 +121,8 @@ function InnerClickerGroup({
   settings,
   svgWidth,
   svgHeight,
-  bodyRef,
+  clickerFloorRef,
+  clickerWallsRef,
   pegRef,
   fitCheck,
 }: {
@@ -129,7 +130,8 @@ function InnerClickerGroup({
   settings: FidgetSettings;
   svgWidth: number;
   svgHeight: number;
-  bodyRef: React.RefObject<THREE.Mesh | null>;
+  clickerFloorRef: React.RefObject<THREE.Mesh | null>;
+  clickerWallsRef: React.RefObject<THREE.Mesh | null>;
   pegRef: React.RefObject<THREE.Mesh | null>;
   fitCheck: boolean;
 }) {
@@ -140,29 +142,35 @@ function InnerClickerGroup({
   );
 
   const { totalDepth, innerFillDepth } = settings;
-  const { clickerDepth, pegHeight } = geos;
+  const { clickerTotalDepth, clickerFloorDepth, pegHeight } = geos;
 
   // In normal mode the clicker floats beside the shell.
   // In fit-check mode it is positioned to sit exactly inside the recess.
   //   Recess bottom (world z) = -totalDepth/2 + innerFillDepth
-  //   Clicker body local geo: 0 → clickerDepth; mesh offset: bodyZ = -clickerDepth/2
-  //   → groupZ so that (groupZ + bodyZ) = recess bottom
-  //   → groupZ = -totalDepth/2 + innerFillDepth + clickerDepth/2
+  //   Clicker local geo runs 0 → clickerTotalDepth; centre offset = -clickerTotalDepth/2
+  //   → groupZ = -totalDepth/2 + innerFillDepth + clickerTotalDepth/2
   const normalGroupPos: [number, number, number] = [35, 0, 0];
   const fitCheckGroupPos: [number, number, number] = [
     0,
     0,
-    -totalDepth / 2 + innerFillDepth + clickerDepth / 2,
+    -totalDepth / 2 + innerFillDepth + clickerTotalDepth / 2,
   ];
   const groupPos = fitCheck ? fitCheckGroupPos : normalGroupPos;
 
-  const bodyZ = -clickerDepth / 2;
-  const pegZ = -clickerDepth / 2 - pegHeight / 2;
+  // Local z origins (geo starts at 0, mesh is centred at -clickerTotalDepth/2)
+  const baseZ  = -clickerTotalDepth / 2;
+  const floorZ = baseZ;                        // solid floor: 0 → clickerFloorDepth
+  const wallsZ = baseZ + clickerFloorDepth;    // walls: clickerFloorDepth → top
+  const pegZ   = baseZ - pegHeight / 2;        // peg hangs below floor
 
   return (
     <group position={groupPos}>
-      <mesh ref={bodyRef} position={[0, 0, bodyZ]} castShadow receiveShadow>
-        <primitive object={geos.body} />
+      <mesh ref={clickerFloorRef} position={[0, 0, floorZ]} castShadow receiveShadow>
+        <primitive object={geos.floor} />
+        <meshStandardMaterial color="#10B981" metalness={0.25} roughness={0.45} />
+      </mesh>
+      <mesh ref={clickerWallsRef} position={[0, 0, wallsZ]} castShadow receiveShadow>
+        <primitive object={geos.walls} />
         <meshStandardMaterial color="#10B981" metalness={0.25} roughness={0.45} />
       </mesh>
       <mesh ref={pegRef} position={[0, 0, pegZ]} rotation={[Math.PI / 2, 0, 0]} castShadow>
@@ -219,7 +227,8 @@ export default function Studio() {
   const innerFillFloorRef = useRef<THREE.Mesh | null>(null);
   const innerFillPinSectionRef = useRef<THREE.Mesh | null>(null);
   const innerFillWallsRef = useRef<THREE.Mesh | null>(null);
-  const bodyRef = useRef<THREE.Mesh | null>(null);
+  const clickerFloorRef = useRef<THREE.Mesh | null>(null);
+  const clickerWallsRef = useRef<THREE.Mesh | null>(null);
   const pegRef = useRef<THREE.Mesh | null>(null);
 
   const createProject = useCreateProject();
@@ -270,7 +279,7 @@ export default function Studio() {
   };
 
   const getMeshes = (): THREE.Mesh[] => {
-    return [outerWallRef, innerFillFloorRef, innerFillPinSectionRef, innerFillWallsRef, bodyRef, pegRef]
+    return [outerWallRef, innerFillFloorRef, innerFillPinSectionRef, innerFillWallsRef, clickerFloorRef, clickerWallsRef, pegRef]
       .map((r) => r.current)
       .filter((m): m is THREE.Mesh => m !== null);
   };
@@ -541,15 +550,53 @@ export default function Studio() {
               <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
                 Inner Clicker
               </h2>
-              <SliderRow
-                label="Peg radius"
-                value={settings.pegRadius}
-                min={1.5}
-                max={6}
-                step={0.01}
-                unit="mm"
-                onChange={(v) => setSetting("pegRadius", v)}
-              />
+              <div className="space-y-5">
+                <SliderRow
+                  label="Total thickness"
+                  value={settings.clickerTotalDepth ?? DEFAULT_SETTINGS.clickerTotalDepth}
+                  min={3}
+                  max={30}
+                  step={0.01}
+                  unit="mm"
+                  onChange={(v) => setSetting("clickerTotalDepth", v)}
+                />
+                <SliderRow
+                  label="Solid floor"
+                  value={settings.clickerFloorDepth ?? DEFAULT_SETTINGS.clickerFloorDepth}
+                  min={0.5}
+                  max={Math.max(0.5, (settings.clickerTotalDepth ?? DEFAULT_SETTINGS.clickerTotalDepth) - 1)}
+                  step={0.01}
+                  unit="mm"
+                  onChange={(v) => setSetting("clickerFloorDepth", v)}
+                />
+                <SliderRow
+                  label="Switch cavity size"
+                  value={settings.clickerSquareSize ?? DEFAULT_SETTINGS.clickerSquareSize}
+                  min={10}
+                  max={30}
+                  step={0.01}
+                  unit="mm"
+                  onChange={(v) => setSetting("clickerSquareSize", v)}
+                />
+                <SliderRow
+                  label="Switch cavity depth"
+                  value={settings.clickerSquareDepth ?? DEFAULT_SETTINGS.clickerSquareDepth}
+                  min={1}
+                  max={Math.max(1, (settings.clickerTotalDepth ?? DEFAULT_SETTINGS.clickerTotalDepth) - (settings.clickerFloorDepth ?? DEFAULT_SETTINGS.clickerFloorDepth))}
+                  step={0.01}
+                  unit="mm"
+                  onChange={(v) => setSetting("clickerSquareDepth", v)}
+                />
+                <SliderRow
+                  label="Peg radius"
+                  value={settings.pegRadius}
+                  min={1.5}
+                  max={6}
+                  step={0.01}
+                  unit="mm"
+                  onChange={(v) => setSetting("pegRadius", v)}
+                />
+              </div>
             </div>
 
             {/* Parts legend */}
@@ -681,7 +728,8 @@ export default function Studio() {
                     settings={settings}
                     svgWidth={svgState.width}
                     svgHeight={svgState.height}
-                    bodyRef={bodyRef}
+                    clickerFloorRef={clickerFloorRef}
+                    clickerWallsRef={clickerWallsRef}
                     pegRef={pegRef}
                     fitCheck={fitCheckMode}
                   />
