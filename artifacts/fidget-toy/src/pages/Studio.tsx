@@ -37,6 +37,7 @@ import {
   Ruler,
   Layers,
   AlertTriangle,
+  HelpCircle,
 } from "lucide-react";
 
 interface ParsedSVGState {
@@ -240,6 +241,19 @@ function PlaceholderMeshes() {
         <meshStandardMaterial color="#10B981" opacity={0.18} transparent wireframe />
       </mesh>
     </>
+  );
+}
+
+// ─── Info tooltip ─────────────────────────────────────────────────────────
+
+function InfoTooltip({ text }: { text: string }) {
+  return (
+    <span className="relative group inline-flex items-center">
+      <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/60 hover:text-muted-foreground cursor-default transition-colors" />
+      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50 leading-relaxed whitespace-normal">
+        {text}
+      </span>
+    </span>
   );
 }
 
@@ -669,6 +683,51 @@ export default function Studio() {
                   unit="mm"
                   onChange={(v) => setSetting("insetAmount", v)}
                 />
+
+                {/* Switch pin holes — sub-section under Outer Shell */}
+                <div className="border-t border-border/40 pt-4 space-y-3">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={settings.pinHolesEnabled}
+                      onChange={(e) => setSetting("pinHolesEnabled", e.target.checked)}
+                      className="h-4 w-4 rounded accent-primary"
+                    />
+                    <span className="text-sm">Cherry MX 5-pin holes</span>
+                    <InfoTooltip text="Punches the Cherry MX 5-pin footprint into the deepest section of the pocket: Ø4 mm center guide · Ø1.8 mm retention pegs (±5.08 mm) · Ø1.5 mm contacts (±3.81 mm / −2.54 mm). The pin section sits below the keycap square — from the pocket floor upward." />
+                  </label>
+                  {settings.pinHolesEnabled && (
+                    <div className="space-y-3 pl-6">
+                      <SliderRow
+                        label="Pin section depth"
+                        value={settings.pinHoleDepth ?? DEFAULT_SETTINGS.pinHoleDepth}
+                        min={1}
+                        max={Math.max(1, (settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth) - 1)}
+                        step={0.01}
+                        unit="mm"
+                        onChange={(v) => setSetting("pinHoleDepth", v)}
+                      />
+                      <SliderRow
+                        label="Print clearance"
+                        value={settings.pinHoleRadius ?? DEFAULT_SETTINGS.pinHoleRadius}
+                        min={0}
+                        max={0.5}
+                        step={0.01}
+                        unit="mm"
+                        onChange={(v) => setSetting("pinHoleRadius", v)}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Switch dimensions — keycap pocket + switch housing cavity */}
+            <div>
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+                Switch Dimensions
+              </h2>
+              <div className="space-y-5">
                 <SliderRow
                   label="Keycap square"
                   value={settings.keycapSize}
@@ -678,50 +737,25 @@ export default function Studio() {
                   unit="mm"
                   onChange={(v) => setSetting("keycapSize", v)}
                 />
-              </div>
-            </div>
-
-            {/* Switch pin holes */}
-            <div>
-              <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
-                Switch Pin Holes
-              </h2>
-              <label className="flex items-center gap-2 cursor-pointer select-none mb-3">
-                <input
-                  type="checkbox"
-                  checked={settings.pinHolesEnabled}
-                  onChange={(e) => setSetting("pinHolesEnabled", e.target.checked)}
-                  className="h-4 w-4 rounded accent-primary"
+                <SliderRow
+                  label="Switch cavity size"
+                  value={settings.clickerSquareSize ?? DEFAULT_SETTINGS.clickerSquareSize}
+                  min={10}
+                  max={30}
+                  step={0.01}
+                  unit="mm"
+                  onChange={(v) => setSetting("clickerSquareSize", v)}
                 />
-                <span className="text-sm">
-                  Cherry MX 5-pin holes
-                </span>
-              </label>
-              {settings.pinHolesEnabled && (
-                <>
-                  <SliderRow
-                    label="Pin section depth"
-                    value={settings.pinHoleDepth ?? DEFAULT_SETTINGS.pinHoleDepth}
-                    min={1}
-                    max={Math.max(1, (settings.keycapPocketDepth ?? DEFAULT_SETTINGS.keycapPocketDepth) - 1)}
-                    step={0.01}
-                    unit="mm"
-                    onChange={(v) => setSetting("pinHoleDepth", v)}
-                  />
-                  <SliderRow
-                    label="Print clearance"
-                    value={settings.pinHoleRadius ?? DEFAULT_SETTINGS.pinHoleRadius}
-                    min={0}
-                    max={0.5}
-                    step={0.01}
-                    unit="mm"
-                    onChange={(v) => setSetting("pinHoleRadius", v)}
-                  />
-                </>
-              )}
-              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                Punches the Cherry MX 5-pin footprint into the deepest section of the pocket: Ø4 mm center guide · Ø1.8 mm retention pegs (±5.08 mm) · Ø1.5 mm contacts (±3.81 mm / −2.54 mm). The pin section sits below the 14×14 keycap square — from the pocket floor upward.
-              </p>
+                <SliderRow
+                  label="Switch cavity depth"
+                  value={settings.clickerSquareDepth ?? DEFAULT_SETTINGS.clickerSquareDepth}
+                  min={1}
+                  max={Math.max(1, (settings.clickerTotalDepth ?? DEFAULT_SETTINGS.clickerTotalDepth) - (settings.clickerFloorDepth ?? DEFAULT_SETTINGS.clickerFloorDepth))}
+                  step={0.01}
+                  unit="mm"
+                  onChange={(v) => setSetting("clickerSquareDepth", v)}
+                />
+              </div>
             </div>
 
             {/* Inner clicker dimensions */}
@@ -756,24 +790,6 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("clickerFloorDepth", v)}
-                />
-                <SliderRow
-                  label="Switch cavity size"
-                  value={settings.clickerSquareSize ?? DEFAULT_SETTINGS.clickerSquareSize}
-                  min={10}
-                  max={30}
-                  step={0.01}
-                  unit="mm"
-                  onChange={(v) => setSetting("clickerSquareSize", v)}
-                />
-                <SliderRow
-                  label="Switch cavity depth"
-                  value={settings.clickerSquareDepth ?? DEFAULT_SETTINGS.clickerSquareDepth}
-                  min={1}
-                  max={Math.max(1, (settings.clickerTotalDepth ?? DEFAULT_SETTINGS.clickerTotalDepth) - (settings.clickerFloorDepth ?? DEFAULT_SETTINGS.clickerFloorDepth))}
-                  step={0.01}
-                  unit="mm"
-                  onChange={(v) => setSetting("clickerSquareDepth", v)}
                 />
                 <SliderRow
                   label="Boss diameter"
