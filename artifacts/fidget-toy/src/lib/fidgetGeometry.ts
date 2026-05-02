@@ -251,7 +251,8 @@ function addCrossHole(shape: THREE.Shape, totalSize: number, armWidth: number, c
   hole.lineTo(cx - h, cy - a);
   hole.lineTo(cx - h, cy + a);
   hole.lineTo(cx - a, cy + a);
-  hole.closePath();
+  // No closePath() — same reason as addSquareHole: closePath() appends a
+  // closing LineCurve that causes a degenerate side face in ExtrudeGeometry.
   shape.holes.push(hole);
 }
 
@@ -656,9 +657,13 @@ function addSquareHole(shape: THREE.Shape, size: number, cx = 0, cy = 0): void {
   hole.lineTo(cx + half, cy - half);
   hole.lineTo(cx + half, cy + half);
   hole.lineTo(cx - half, cy + half);
-  // Do NOT lineTo back to start — that would add a zero-length closing
-  // edge that generates a degenerate NaN-normal triangle when extruded.
-  hole.closePath();
+  // Do NOT call hole.closePath() — closePath() internally appends a
+  // LineCurve back to the moveTo start, so getPoints() returns n+1
+  // samples where the last equals the first.  ExtrudeGeometry's
+  // sidewalls() then creates a zero-area quad at index 0 → degenerate
+  // triangle → NaN normal → visible spike.  Omitting closePath() lets
+  // sidewalls() wrap implicitly (k = pts.length-1 when i = 0) with no
+  // duplicate vertex, and earcut triangulates the face correctly.
   shape.holes.push(hole);
 }
 
