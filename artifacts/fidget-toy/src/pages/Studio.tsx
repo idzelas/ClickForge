@@ -307,6 +307,9 @@ export default function Studio() {
   const [isDragging, setIsDragging] = useState(false);
   const [settings, setSettings] = useState<FidgetSettings>(DEFAULT_SETTINGS);
   const [fitCheckMode, setFitCheckMode] = useState(false);
+  // Draft value for the size input — lets the user finish typing before
+  // the 3D scene recalculates.  Committed on blur or Enter.
+  const [draftSizeMm, setDraftSizeMm] = useState<string>(String(DEFAULT_SETTINGS.targetSizeMm));
 
   const geoWarnings = useMemo<GeometryWarning[]>(
     () => svgState
@@ -578,8 +581,17 @@ export default function Studio() {
                       min={10}
                       max={200}
                       step={1}
-                      value={settings.targetSizeMm}
-                      onChange={(e) => setSetting("targetSizeMm", Number(e.target.value))}
+                      value={draftSizeMm}
+                      onChange={(e) => setDraftSizeMm(e.target.value)}
+                      onBlur={() => {
+                        const n = Number(draftSizeMm);
+                        const clamped = Number.isFinite(n) ? Math.min(200, Math.max(10, n)) : settings.targetSizeMm;
+                        setDraftSizeMm(String(clamped));
+                        setSetting("targetSizeMm", clamped);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                      }}
                       className="h-8 text-xs"
                     />
                   </div>
