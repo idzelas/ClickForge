@@ -39,6 +39,10 @@ import {
   AlertTriangle,
   HelpCircle,
   Crosshair,
+  Scan,
+  Eye,
+  Mouse,
+  MoveHorizontal,
 } from "lucide-react";
 
 // ─── Colour utilities ─────────────────────────────────────────────────────
@@ -114,6 +118,10 @@ interface ParsedSVGState {
   fileName: string;
 }
 
+// ─── View mode ────────────────────────────────────────────────────────────
+
+type ViewMode = "solid" | "wireframe" | "xray";
+
 // ─── Outer shell: outer wall ring + inner fill (floor + pocket walls) ────
 
 function OuterShellGroup({
@@ -129,6 +137,7 @@ function OuterShellGroup({
   onBounds,
   color,
   activeHighlights = [],
+  viewMode = "solid",
 }: {
   shapes: THREE.Shape[];
   settings: FidgetSettings;
@@ -142,6 +151,7 @@ function OuterShellGroup({
   onBounds?: (b: { w: number; h: number }) => void;
   color: string;
   activeHighlights: MeshKey[];
+  viewMode?: ViewMode;
 }) {
   const geos = useMemo(
     () => createOuterShellGeometries(shapes, settings, svgWidth, svgHeight),
@@ -168,45 +178,48 @@ function OuterShellGroup({
 
   const groupX = fitCheck ? 0 : -separationX;
 
+  const isWire = viewMode === "wireframe";
+  const isXray = viewMode === "xray";
   const hl = (k: MeshKey) => activeHighlights.includes(k);
   return (
     <group position={[groupX, 0, groupZ]} rotation={[flip ? Math.PI : 0, 0, 0]}>
       {/* Outer wall ring — ghost in fit-check so you can see inside */}
-      <mesh ref={outerWallRef} position={[0, 0, geos.zOffsets.outerWall]} castShadow={!fitCheck} receiveShadow>
+      <mesh ref={outerWallRef} position={[0, 0, geos.zOffsets.outerWall]} castShadow={!fitCheck && !isXray} receiveShadow>
         <primitive object={geos.outerWall} />
         <meshStandardMaterial
           color={color}
-          metalness={0.25}
+          metalness={isWire ? 0 : 0.25}
           roughness={0.45}
-          opacity={fitCheck ? 0.28 : 1}
-          transparent={fitCheck}
-          depthWrite={!fitCheck}
+          wireframe={isWire}
+          opacity={fitCheck ? 0.28 : isXray ? 0.3 : 1}
+          transparent={fitCheck || isXray}
+          depthWrite={!fitCheck && !isXray}
         />
       </mesh>
       <MeshHighlightOverlay geometry={geos.outerWall} position={[0, 0, geos.zOffsets.outerWall]} highlighted={hl("shell_outer")} />
 
       {/* Solid floor — never penetrated */}
-      <mesh ref={innerFillFloorRef} position={[0, 0, geos.zOffsets.innerFillFloor]} castShadow receiveShadow>
+      <mesh ref={innerFillFloorRef} position={[0, 0, geos.zOffsets.innerFillFloor]} castShadow={!isXray} receiveShadow>
         <primitive object={geos.innerFillFloor} />
-        <meshStandardMaterial color={color} metalness={0.15} roughness={0.55} />
+        <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.15} roughness={0.55} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
       </mesh>
       <MeshHighlightOverlay geometry={geos.innerFillFloor} position={[0, 0, geos.zOffsets.innerFillFloor]} highlighted={hl("shell_floor")} />
 
       {/* MX pin-hole section — deepest part of pocket (only when enabled) */}
       {geos.innerFillPinSection && (
         <>
-          <mesh ref={innerFillPinSectionRef} position={[0, 0, geos.zOffsets.innerFillPinSection]} castShadow receiveShadow>
+          <mesh ref={innerFillPinSectionRef} position={[0, 0, geos.zOffsets.innerFillPinSection]} castShadow={!isXray} receiveShadow>
             <primitive object={geos.innerFillPinSection} />
-            <meshStandardMaterial color={color} metalness={0.15} roughness={0.55} />
+            <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.15} roughness={0.55} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
           </mesh>
           <MeshHighlightOverlay geometry={geos.innerFillPinSection} position={[0, 0, geos.zOffsets.innerFillPinSection]} highlighted={hl("shell_pin")} />
         </>
       )}
 
       {/* Keycap square pocket walls — upper / shallower section of pocket */}
-      <mesh ref={innerFillWallsRef} position={[0, 0, geos.zOffsets.innerFillWalls]} castShadow receiveShadow>
+      <mesh ref={innerFillWallsRef} position={[0, 0, geos.zOffsets.innerFillWalls]} castShadow={!isXray} receiveShadow>
         <primitive object={geos.innerFillWalls} />
-        <meshStandardMaterial color={color} metalness={0.15} roughness={0.55} />
+        <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.15} roughness={0.55} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
       </mesh>
       <MeshHighlightOverlay geometry={geos.innerFillWalls} position={[0, 0, geos.zOffsets.innerFillWalls]} highlighted={hl("shell_walls")} />
     </group>
@@ -228,6 +241,7 @@ function InnerClickerGroup({
   onBounds,
   color,
   activeHighlights = [],
+  viewMode = "solid",
 }: {
   shapes: THREE.Shape[];
   settings: FidgetSettings;
@@ -241,6 +255,7 @@ function InnerClickerGroup({
   onBounds?: (b: { w: number; h: number }) => void;
   color: string;
   activeHighlights: MeshKey[];
+  viewMode?: ViewMode;
 }) {
   const geos = useMemo(
     () => createInnerClickerGeometries(shapes, settings, svgWidth, svgHeight),
@@ -286,36 +301,70 @@ function InnerClickerGroup({
 
   // Clicker geometry is already centred at local z=0 (spans –depth/2 → +depth/2),
   // so a 180° rotation around X keeps it centred without any extra translation.
+  const isWire = viewMode === "wireframe";
+  const isXray = viewMode === "xray";
   const hl = (k: MeshKey) => activeHighlights.includes(k);
   return (
     <group position={groupPos} rotation={[flip ? Math.PI : 0, 0, 0]}>
-      <mesh ref={clickerFloorRef} position={[0, 0, floorZ]} castShadow receiveShadow>
+      <mesh ref={clickerFloorRef} position={[0, 0, floorZ]} castShadow={!isXray} receiveShadow>
         <primitive object={geos.floor} />
-        <meshStandardMaterial color={color} metalness={0.25} roughness={0.45} />
+        <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.25} roughness={0.45} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
       </mesh>
       <MeshHighlightOverlay geometry={geos.floor} position={[0, 0, floorZ]} highlighted={hl("click_floor")} />
 
-      <mesh ref={clickerWallsRef} position={[0, 0, wallsZ]} castShadow receiveShadow>
+      <mesh ref={clickerWallsRef} position={[0, 0, wallsZ]} castShadow={!isXray} receiveShadow>
         <primitive object={geos.walls} />
-        <meshStandardMaterial color={color} metalness={0.25} roughness={0.45} />
+        <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.25} roughness={0.45} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
       </mesh>
       <MeshHighlightOverlay geometry={geos.walls} position={[0, 0, wallsZ]} highlighted={hl("click_walls")} />
 
       {/* Boss base — solid disk that closes the bottom of the cross pocket */}
-      <mesh ref={bossBaseRef} position={[0, 0, bossBaseZ]} castShadow receiveShadow>
+      <mesh ref={bossBaseRef} position={[0, 0, bossBaseZ]} castShadow={!isXray} receiveShadow>
         <primitive object={geos.bossBase} />
-        <meshStandardMaterial color={color} metalness={0.3} roughness={0.4} />
+        <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.3} roughness={0.4} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
       </mesh>
       <MeshHighlightOverlay geometry={geos.bossBase} position={[0, 0, bossBaseZ]} highlighted={hl("click_boss")} />
 
       {/* Boss main — cylindrical shell with MX cross pocket cut through the top */}
-      <mesh ref={bossMainRef} position={[0, 0, bossMainZ]} castShadow receiveShadow>
+      <mesh ref={bossMainRef} position={[0, 0, bossMainZ]} castShadow={!isXray} receiveShadow>
         <primitive object={geos.bossMain} />
-        <meshStandardMaterial color={color} metalness={0.3} roughness={0.4} />
+        <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.3} roughness={0.4} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
       </mesh>
       <MeshHighlightOverlay geometry={geos.bossMain} position={[0, 0, bossMainZ]} highlighted={hl("click_boss")} />
     </group>
   );
+}
+
+// ─── Label projector — runs inside Canvas, tracks model centers to screen ──
+
+function LabelProjector({
+  separationX,
+  shellLabelRef,
+  clickerLabelRef,
+}: {
+  separationX: number;
+  shellLabelRef: React.RefObject<HTMLDivElement | null>;
+  clickerLabelRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const { camera } = useThree();
+  useFrame(() => {
+    const projectXPct = (wx: number) => {
+      const v = new THREE.Vector3(wx, 0, 0);
+      v.project(camera);
+      return ((v.x + 1) / 2) * 100;
+    };
+    const shellPct   = projectXPct(-separationX);
+    const clickerPct = projectXPct(separationX);
+    if (shellLabelRef.current) {
+      shellLabelRef.current.style.left      = `${shellPct}%`;
+      shellLabelRef.current.style.transform = "translateX(-50%)";
+    }
+    if (clickerLabelRef.current) {
+      clickerLabelRef.current.style.left      = `${clickerPct}%`;
+      clickerLabelRef.current.style.transform = "translateX(-50%)";
+    }
+  });
+  return null;
 }
 
 // ─── Placeholder ──────────────────────────────────────────────────────────
@@ -503,7 +552,7 @@ function ViewCube({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 7,
+              fontSize: 10.5,
               fontWeight: 700,
               letterSpacing: "0.08em",
               color: "rgba(255,255,255,0.95)",
@@ -771,6 +820,9 @@ export default function Studio() {
   const [fitCheckMode, setFitCheckMode] = useState(false);
   const [showDimensions, setShowDimensions] = useState(true);
   const [recenterKey, setRecenterKey] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>("solid");
+  const shellLabelRef   = useRef<HTMLDivElement>(null);
+  const clickerLabelRef = useRef<HTMLDivElement>(null);
   const [sliderHighlight, setSliderHighlight] = useState<MeshKey[]>([]);
   const hl = (keys: MeshKey[]) => ({
     onHighlightIn:  () => setSliderHighlight(keys),
@@ -1507,7 +1559,7 @@ export default function Studio() {
             </div>
           )}
 
-          {/* ── Dimensions + Fit-check (top-right) ── */}
+          {/* ── View toggles (top-right) ── */}
           {svgState && (
             <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
               {/* Dimensions toggle */}
@@ -1522,6 +1574,32 @@ export default function Studio() {
               >
                 <Ruler className="h-3.5 w-3.5" />
                 Dimensions
+              </button>
+              {/* Wireframe toggle */}
+              <button
+                onClick={() => setViewMode((v) => v === "wireframe" ? "solid" : "wireframe")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium border transition-colors ${
+                  viewMode === "wireframe"
+                    ? "bg-sky-600/90 border-sky-500 text-white shadow-lg"
+                    : "bg-background/80 border-border text-muted-foreground hover:text-foreground backdrop-blur-sm"
+                }`}
+                title="Toggle wireframe view"
+              >
+                <Scan className="h-3.5 w-3.5" />
+                Wireframe
+              </button>
+              {/* X-ray toggle */}
+              <button
+                onClick={() => setViewMode((v) => v === "xray" ? "solid" : "xray")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium border transition-colors ${
+                  viewMode === "xray"
+                    ? "bg-violet-600/90 border-violet-500 text-white shadow-lg"
+                    : "bg-background/80 border-border text-muted-foreground hover:text-foreground backdrop-blur-sm"
+                }`}
+                title="Toggle x-ray view — see through the geometry"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                X-Ray
               </button>
               <button
                 onClick={() => setFitCheckMode((v) => !v)}
@@ -1575,6 +1653,7 @@ export default function Studio() {
                       onBounds={setShellBounds}
                       color={settings.shellColor ?? DEFAULT_SETTINGS.shellColor}
                       activeHighlights={sliderHighlight}
+                      viewMode={viewMode}
                     />
                     <InnerClickerGroup
                       shapes={svgState.shapes}
@@ -1589,6 +1668,7 @@ export default function Studio() {
                       onBounds={setClickerBounds}
                       color={settings.clickerColor ?? DEFAULT_SETTINGS.clickerColor}
                       activeHighlights={sliderHighlight}
+                      viewMode={viewMode}
                     />
                   </>
                 ) : (
@@ -1642,16 +1722,26 @@ export default function Studio() {
               </>
             )}
 
+            {svgState && (
+              <LabelProjector
+                separationX={sceneMetrics.separationX}
+                shellLabelRef={shellLabelRef}
+                clickerLabelRef={clickerLabelRef}
+              />
+            )}
             <CameraTracker stateRef={vcStateRef} snapRef={vcSnapRef} dragRef={vcDragRef} />
             <OrbitControls makeDefault enablePan enableZoom enableRotate />
           </Canvas>
 
-          {/* Labels */}
+          {/* Labels — horizontal position is driven every frame by LabelProjector */}
           {svgState && (
             <>
               <div
-                className="absolute top-4 left-[25%] -translate-x-1/2 text-xs text-white/70 rounded px-2 py-1 pointer-events-none"
+                ref={shellLabelRef}
+                className="absolute top-4 text-xs text-white/70 rounded px-2 py-1 pointer-events-none"
                 style={{
+                  left: "25%",
+                  transform: "translateX(-50%)",
                   backgroundColor: `${settings.shellColor ?? DEFAULT_SETTINGS.shellColor}33`,
                   borderWidth: 1,
                   borderStyle: "solid",
@@ -1661,8 +1751,11 @@ export default function Studio() {
                 Outer Shell
               </div>
               <div
-                className="absolute top-4 right-[25%] translate-x-1/2 text-xs text-white/70 rounded px-2 py-1 pointer-events-none"
+                ref={clickerLabelRef}
+                className="absolute top-4 text-xs text-white/70 rounded px-2 py-1 pointer-events-none"
                 style={{
+                  left: "75%",
+                  transform: "translateX(-50%)",
                   backgroundColor: `${settings.clickerColor ?? DEFAULT_SETTINGS.clickerColor}33`,
                   borderWidth: 1,
                   borderStyle: "solid",
@@ -1675,7 +1768,7 @@ export default function Studio() {
           )}
 
           {/* ── ViewCube + Re-center (bottom-left) ── */}
-          <div className="absolute bottom-4 left-4 z-10 flex items-end gap-2">
+          <div className="absolute bottom-8 left-8 z-10 flex items-end gap-4">
             <ViewCube stateRef={vcStateRef} snapRef={vcSnapRef} dragRef={vcDragRef} />
             <button
               onClick={() => setRecenterKey((k) => k + 1)}
@@ -1687,8 +1780,16 @@ export default function Studio() {
             </button>
           </div>
 
-          <div className="absolute bottom-4 right-4 text-xs text-muted-foreground bg-card/80 backdrop-blur px-2 py-1 rounded">
-            Scroll to zoom · Middle-drag to pan
+          {/* ── Scroll/pan hints (bottom-right) ── */}
+          <div className="absolute bottom-8 right-6 flex flex-col items-end gap-1.5 text-[11px] text-white/35 pointer-events-none select-none">
+            <div className="flex items-center gap-1.5">
+              <Mouse className="h-3.5 w-3.5" />
+              Scroll to zoom
+            </div>
+            <div className="flex items-center gap-1.5">
+              <MoveHorizontal className="h-3.5 w-3.5" />
+              Middle-drag to pan
+            </div>
           </div>
         </main>
       </div>
