@@ -35,6 +35,9 @@ export interface FidgetSettings {
   flipClicker: boolean;        // flip inner clicker upside-down (rotate 180° around X)
   mirrorShell: boolean;        // mirror outer shell silhouette left-right
   mirrorClicker: boolean;      // mirror inner clicker silhouette left-right
+  // Preview colours (hex strings, e.g. "#6C63FF")
+  shellColor: string;
+  clickerColor: string;
 }
 
 export const DEFAULT_SETTINGS: FidgetSettings = {
@@ -64,6 +67,8 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   flipClicker: false,
   mirrorShell: false,
   mirrorClicker: false,
+  shellColor: "#6C63FF",
+  clickerColor: "#10B981",
 };
 
 /**

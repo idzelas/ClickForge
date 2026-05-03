@@ -62,6 +62,7 @@ function OuterShellGroup({
   innerFillWallsRef,
   fitCheck,
   onBounds,
+  color,
 }: {
   shapes: THREE.Shape[];
   settings: FidgetSettings;
@@ -73,6 +74,7 @@ function OuterShellGroup({
   innerFillWallsRef: React.RefObject<THREE.Mesh | null>;
   fitCheck: boolean;
   onBounds?: (b: { w: number; h: number }) => void;
+  color: string;
 }) {
   const geos = useMemo(
     () => createOuterShellGeometries(shapes, settings, svgWidth, svgHeight),
@@ -105,7 +107,7 @@ function OuterShellGroup({
       <mesh ref={outerWallRef} position={[0, 0, geos.zOffsets.outerWall]} castShadow={!fitCheck} receiveShadow>
         <primitive object={geos.outerWall} />
         <meshStandardMaterial
-          color="#6C63FF"
+          color={color}
           metalness={0.25}
           roughness={0.45}
           opacity={fitCheck ? 0.28 : 1}
@@ -117,21 +119,21 @@ function OuterShellGroup({
       {/* Solid floor — never penetrated */}
       <mesh ref={innerFillFloorRef} position={[0, 0, geos.zOffsets.innerFillFloor]} castShadow receiveShadow>
         <primitive object={geos.innerFillFloor} />
-        <meshStandardMaterial color="#9B94FF" metalness={0.2} roughness={0.5} />
+        <meshStandardMaterial color={color} metalness={0.15} roughness={0.55} />
       </mesh>
 
       {/* MX pin-hole section — deepest part of pocket (only when enabled) */}
       {geos.innerFillPinSection && (
         <mesh ref={innerFillPinSectionRef} position={[0, 0, geos.zOffsets.innerFillPinSection]} castShadow receiveShadow>
           <primitive object={geos.innerFillPinSection} />
-          <meshStandardMaterial color="#7C74E8" metalness={0.2} roughness={0.5} />
+          <meshStandardMaterial color={color} metalness={0.15} roughness={0.55} />
         </mesh>
       )}
 
       {/* Keycap square pocket walls — upper / shallower section of pocket */}
       <mesh ref={innerFillWallsRef} position={[0, 0, geos.zOffsets.innerFillWalls]} castShadow receiveShadow>
         <primitive object={geos.innerFillWalls} />
-        <meshStandardMaterial color="#9B94FF" metalness={0.2} roughness={0.5} />
+        <meshStandardMaterial color={color} metalness={0.15} roughness={0.55} />
       </mesh>
     </group>
   );
@@ -150,6 +152,7 @@ function InnerClickerGroup({
   bossMainRef,
   fitCheck,
   onBounds,
+  color,
 }: {
   shapes: THREE.Shape[];
   settings: FidgetSettings;
@@ -161,6 +164,7 @@ function InnerClickerGroup({
   bossMainRef: React.RefObject<THREE.Mesh | null>;
   fitCheck: boolean;
   onBounds?: (b: { w: number; h: number }) => void;
+  color: string;
 }) {
   const geos = useMemo(
     () => createInnerClickerGeometries(shapes, settings, svgWidth, svgHeight),
@@ -210,21 +214,21 @@ function InnerClickerGroup({
     <group position={groupPos} rotation={[flip ? Math.PI : 0, 0, 0]}>
       <mesh ref={clickerFloorRef} position={[0, 0, floorZ]} castShadow receiveShadow>
         <primitive object={geos.floor} />
-        <meshStandardMaterial color="#10B981" metalness={0.25} roughness={0.45} />
+        <meshStandardMaterial color={color} metalness={0.25} roughness={0.45} />
       </mesh>
       <mesh ref={clickerWallsRef} position={[0, 0, wallsZ]} castShadow receiveShadow>
         <primitive object={geos.walls} />
-        <meshStandardMaterial color="#10B981" metalness={0.25} roughness={0.45} />
+        <meshStandardMaterial color={color} metalness={0.25} roughness={0.45} />
       </mesh>
       {/* Boss base — solid disk that closes the bottom of the cross pocket */}
       <mesh ref={bossBaseRef} position={[0, 0, bossBaseZ]} castShadow receiveShadow>
         <primitive object={geos.bossBase} />
-        <meshStandardMaterial color="#34D399" metalness={0.3} roughness={0.4} />
+        <meshStandardMaterial color={color} metalness={0.3} roughness={0.4} />
       </mesh>
       {/* Boss main — cylindrical shell with MX cross pocket cut through the top */}
       <mesh ref={bossMainRef} position={[0, 0, bossMainZ]} castShadow receiveShadow>
         <primitive object={geos.bossMain} />
-        <meshStandardMaterial color="#34D399" metalness={0.3} roughness={0.4} />
+        <meshStandardMaterial color={color} metalness={0.3} roughness={0.4} />
       </mesh>
     </group>
   );
@@ -761,6 +765,15 @@ export default function Studio() {
                 Outer Shell
               </h2>
               <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Preview color</span>
+                  <input
+                    type="color"
+                    value={settings.shellColor ?? DEFAULT_SETTINGS.shellColor}
+                    onChange={(e) => setSetting("shellColor", e.target.value)}
+                    className="h-8 w-14 rounded border border-input cursor-pointer bg-transparent p-0.5"
+                  />
+                </div>
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -913,6 +926,15 @@ export default function Studio() {
                 Inner Clicker
               </h2>
               <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Preview color</span>
+                  <input
+                    type="color"
+                    value={settings.clickerColor ?? DEFAULT_SETTINGS.clickerColor}
+                    onChange={(e) => setSetting("clickerColor", e.target.value)}
+                    className="h-8 w-14 rounded border border-input cursor-pointer bg-transparent p-0.5"
+                  />
+                </div>
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -1169,6 +1191,7 @@ export default function Studio() {
                       innerFillWallsRef={innerFillWallsRef}
                       fitCheck={fitCheckMode}
                       onBounds={setShellBounds}
+                      color={settings.shellColor ?? DEFAULT_SETTINGS.shellColor}
                     />
                     <InnerClickerGroup
                       shapes={svgState.shapes}
@@ -1181,6 +1204,7 @@ export default function Studio() {
                       bossMainRef={bossMainRef}
                       fitCheck={fitCheckMode}
                       onBounds={setClickerBounds}
+                      color={settings.clickerColor ?? DEFAULT_SETTINGS.clickerColor}
                     />
                   </>
                 ) : (
@@ -1240,10 +1264,26 @@ export default function Studio() {
           {/* Labels */}
           {svgState && (
             <>
-              <div className="absolute top-4 left-[25%] -translate-x-1/2 text-xs text-white/70 bg-[#6C63FF]/20 border border-[#6C63FF]/30 rounded px-2 py-1 pointer-events-none">
+              <div
+                className="absolute top-4 left-[25%] -translate-x-1/2 text-xs text-white/70 rounded px-2 py-1 pointer-events-none"
+                style={{
+                  backgroundColor: `${settings.shellColor ?? DEFAULT_SETTINGS.shellColor}33`,
+                  borderWidth: 1,
+                  borderStyle: "solid",
+                  borderColor: `${settings.shellColor ?? DEFAULT_SETTINGS.shellColor}4D`,
+                }}
+              >
                 Outer Shell
               </div>
-              <div className="absolute top-4 right-[25%] translate-x-1/2 text-xs text-white/70 bg-[#10B981]/20 border border-[#10B981]/30 rounded px-2 py-1 pointer-events-none">
+              <div
+                className="absolute top-4 right-[25%] translate-x-1/2 text-xs text-white/70 rounded px-2 py-1 pointer-events-none"
+                style={{
+                  backgroundColor: `${settings.clickerColor ?? DEFAULT_SETTINGS.clickerColor}33`,
+                  borderWidth: 1,
+                  borderStyle: "solid",
+                  borderColor: `${settings.clickerColor ?? DEFAULT_SETTINGS.clickerColor}4D`,
+                }}
+              >
                 Inner Clicker
               </div>
             </>
