@@ -1458,6 +1458,16 @@ export default function Studio() {
                   <span className="text-sm">Mirror left-right</span>
                 </label>
                 <SliderRow
+                  label="XY gap (clearance)"
+                  value={settings.clearanceMm ?? DEFAULT_SETTINGS.clearanceMm}
+                  min={0.05}
+                  max={1.0}
+                  step={0.01}
+                  unit="mm"
+                  onChange={(v) => setSetting("clearanceMm", v)}
+                  {...hl(["click_floor", "click_walls"])}
+                />
+                <SliderRow
                   label="Total thickness"
                   value={settings.clickerTotalDepth ?? DEFAULT_SETTINGS.clickerTotalDepth}
                   min={3}

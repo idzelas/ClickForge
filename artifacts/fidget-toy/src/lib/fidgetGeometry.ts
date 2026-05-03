@@ -38,6 +38,9 @@ export interface FidgetSettings {
   // When true the SVG silhouette is used as the inner clicker body and the
   // outer shell is computed by expanding it outward by `insetAmount`.
   svgIsClickerShape: boolean;
+  // Lateral (X/Y) gap between the outer edge of the clicker body and the
+  // inner edge of the shell pocket — controls how loose/tight the slide fit is.
+  clearanceMm: number;
   // Preview colours (hex strings, e.g. "#6C63FF")
   shellColor: string;
   clickerColor: string;
@@ -66,6 +69,7 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   crossArmWidth: 1.31,
   pocketOffsetX: 0,
   pocketOffsetY: 0,
+  clearanceMm: 0.3,
   flipShell: false,
   flipClicker: false,
   mirrorShell: false,
@@ -312,8 +316,8 @@ export function createInnerClickerGeometries(
   const bossFloorGap       = settings.bossFloorGap       ?? DEFAULT_SETTINGS.bossFloorGap;
 
   // The clicker's outer boundary is sized so it slides cleanly into the shell
-  // pocket without binding (0.3 mm print clearance on every side).
-  const CLEARANCE = 0.3;
+  // pocket without binding. Controlled by the user-facing clearance slider.
+  const CLEARANCE = settings.clearanceMm ?? DEFAULT_SETTINGS.clearanceMm;
   const mirrorClicker = settings.mirrorClicker ?? false;
   const svgIsClickerShape = settings.svgIsClickerShape ?? false;
   const svgShape = transformToMm(baseShape, scale, svgWidth, svgHeight, mirrorClicker);
@@ -632,7 +636,7 @@ export function validateGeometry(
   const keycapSize        = settings.keycapSize        ?? DEFAULT_SETTINGS.keycapSize;
   const clickerSquareSize = settings.clickerSquareSize ?? DEFAULT_SETTINGS.clickerSquareSize;
   const bossDiameter      = settings.bossDiameter      ?? DEFAULT_SETTINGS.bossDiameter;
-  const CLEARANCE = 0.3;
+  const CLEARANCE = settings.clearanceMm ?? DEFAULT_SETTINGS.clearanceMm;
 
   // ── Step 1: shell outer → shell inner ────────────────────────────────────
   // Keep nullable — a null means the shape collapses at this wall thickness,
