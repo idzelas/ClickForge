@@ -52,6 +52,9 @@ export interface FidgetSettings {
   keyRingOuterDiameter: number; // mm, e.g. 10
   keyRingHoleDiameter: number;  // mm, e.g. 5
   keyRingThickness: number;     // mm, lug Z thickness (aligned to bottom), e.g. 1
+  // Color region flat bodies — thickness of each per-color extruded slab,
+  // sitting flush with the bottom face of the outer shell (z=0 upward).
+  colorLayerThickness: number;
 }
 
 export const DEFAULT_SETTINGS: FidgetSettings = {
@@ -90,6 +93,7 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   keyRingOuterDiameter: 10,
   keyRingHoleDiameter: 5,
   keyRingThickness: 1,
+  colorLayerThickness: 0.4,
 };
 
 /**
@@ -382,6 +386,79 @@ export function createKeyRingGeometry(
     geometry,
     position: { x: 0, y: outerShellBounds.h / 2 },
   };
+}
+
+/**
+ * Build per-color flat extruded slab geometries for the live preview and
+ * the color-layer export pipeline.  Each region's shapes are transformed to
+ * mm using the same `transformToMm` logic as the shell, then extruded from
+ * z=0 upward to `colorLayerThickness` (no z bump — the geometry is flush
+ * with the shell's bottom face; preview-only anti-flicker offsets are
+ * applied at the mesh level by the renderer, never baked into geometry).
+ */
+export function createColorLayerGeometries(
+  colorRegions: Array<{ color: string; shapes: THREE.Shape[] }>,
+  settings: FidgetSettings,
+  svgWidth: number,
+  svgHeight: number,
+): Array<{ color: string; geometry: THREE.BufferGeometry }> {
+  if (colorRegions.length === 0) return [];
+
+  const { scale } = computeScale(settings, svgWidth, svgHeight);
+  const thickness = Math.max(
+    0.01,
+    settings.colorLayerThickness ?? DEFAULT_SETTINGS.colorLayerThickness,
+  );
+  // Match the shell's mirroring so color regions stay aligned with the shell.
+  const mirror = settings.mirrorShell ?? false;
+
+  const out: Array<{ color: string; geometry: THREE.BufferGeometry }> = [];
+  for (const region of colorRegions) {
+    const geos: THREE.BufferGeometry[] = [];
+    for (const shape of region.shapes) {
+      const transformed = transformToMm(shape, scale, svgWidth, svgHeight, mirror);
+      const geo = new THREE.ExtrudeGeometry(transformed, {
+        depth: thickness,
+        bevelEnabled: false,
+      });
+      geos.push(geo.index ? geo.toNonIndexed() : geo);
+    }
+    if (geos.length === 0) continue;
+    const merged =
+      geos.length === 1
+        ? geos[0]
+        : (mergeGeometriesSafe(geos) ?? geos[0]);
+    out.push({ color: region.color, geometry: merged });
+  }
+  return out;
+}
+
+/** Concat several non-indexed BufferGeometries by manually merging position+normal+uv. */
+function mergeGeometriesSafe(geos: THREE.BufferGeometry[]): THREE.BufferGeometry | null {
+  if (geos.length === 0) return null;
+  let totalPos = 0, totalNorm = 0, totalUv = 0;
+  for (const g of geos) {
+    totalPos  += g.attributes.position?.count ?? 0;
+    totalNorm += g.attributes.normal?.count   ?? 0;
+    totalUv   += g.attributes.uv?.count       ?? 0;
+  }
+  const pos  = new Float32Array(totalPos * 3);
+  const norm = totalNorm > 0 ? new Float32Array(totalNorm * 3) : null;
+  const uv   = totalUv   > 0 ? new Float32Array(totalUv   * 2) : null;
+  let pOff = 0, nOff = 0, uOff = 0;
+  for (const g of geos) {
+    const p = g.attributes.position;
+    if (p) { pos.set(p.array as Float32Array, pOff); pOff += p.array.length; }
+    const n = g.attributes.normal;
+    if (n && norm) { norm.set(n.array as Float32Array, nOff); nOff += n.array.length; }
+    const u = g.attributes.uv;
+    if (u && uv)   { uv.set(u.array as Float32Array, uOff);   uOff += u.array.length; }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  if (norm) out.setAttribute("normal", new THREE.BufferAttribute(norm, 3));
+  if (uv)   out.setAttribute("uv",     new THREE.BufferAttribute(uv,   2));
+  return out;
 }
 
 /** Build a circle THREE.Shape at (cx, cy). cx/cy default to 0 for backward compat. */

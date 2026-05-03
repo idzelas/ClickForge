@@ -93,11 +93,16 @@ function shapeBounds(shapes: THREE.Shape[]): { minX: number; minY: number; w: nu
   return isFinite(minX) ? { minX, minY, w: maxX - minX, h: maxY - minY } : null;
 }
 
-export function parseSVGContent(svgContent: string): ParsedSVG {
-  // ── 1. Parse to DOM and strip invisible artboard rects ─────────────────
-  // Illustrator / Figma / Affinity emit <rect fill="none"> spanning the entire
-  // artboard as a bounding-box placeholder.  Strip them first so they don't
-  // inflate the bounding box calculation.
+/**
+ * Run the same two-pass DOM normalisation used by `parseSVGContent`:
+ *   pass 1 — translate the viewBox origin to (0, 0)
+ *   pass 2 — wrap content so the tight bbox origin is also (0, 0)
+ *
+ * Returns the final normalised SVG string plus its content dimensions.
+ * Callers can then run `SVGLoader.parse(svg)` on the result to get shapes
+ * and per-path metadata (fill colour, etc.) in a clean coord space.
+ */
+function normalizeSvgForParsing(svgContent: string): { svg: string; width: number; height: number } {
   const domParser = new DOMParser();
   const doc       = domParser.parseFromString(svgContent, "image/svg+xml");
   const svgEl     = doc.querySelector("svg");
@@ -108,7 +113,6 @@ export function parseSVGContent(svgContent: string): ParsedSVG {
     }
   }
 
-  // ── 2. Read the original viewBox (for fallback and origin normalisation) ─
   let vbX = 0, vbY = 0, vbW = 100, vbH = 100;
   if (svgEl) {
     const vb = svgEl.getAttribute("viewBox");
@@ -123,13 +127,6 @@ export function parseSVGContent(svgContent: string): ParsedSVG {
     }
   }
 
-  // ── 3. Pass 1 — normalise the viewBox origin to (0, 0) ─────────────────
-  // SVGLoader's behaviour with a non-zero viewBox origin (e.g. "5.2 8.1 640 100")
-  // is implementation-dependent: it may or may not subtract the origin before
-  // emitting shape coordinates.  To avoid that ambiguity entirely we translate
-  // the content in the DOM by (-vbX, -vbY) and rewrite the viewBox to start
-  // at (0, 0).  After this transform, SVGLoader's output coordinate space and
-  // the SVG DOM coordinate space are guaranteed to share the same origin.
   if (svgEl && (vbX !== 0 || vbY !== 0)) {
     wrapAndReframe(doc, svgEl, -vbX, -vbY, vbW, vbH);
   }
@@ -138,44 +135,117 @@ export function parseSVGContent(svgContent: string): ParsedSVG {
   const pass1Shapes = parseSvgString(pass1Svg);
 
   if (pass1Shapes.length === 0) {
-    return { shapes: [], width: vbW, height: vbH };
+    return { svg: pass1Svg, width: vbW, height: vbH };
   }
 
-  // ── 4. Compute the tight content bounding box ───────────────────────────
-  // After Pass 1 the SVG has a (0,0) viewBox origin, so SVGLoader output
-  // coordinates align with DOM user-unit coordinates.  The tight bbox
-  // (minX, minY) is therefore a valid SVG DOM translate value.
   const bounds = shapeBounds(pass1Shapes);
   if (!bounds) {
-    return { shapes: pass1Shapes, width: vbW, height: vbH };
+    return { svg: pass1Svg, width: vbW, height: vbH };
   }
 
   const { minX, minY, w: tightW, h: tightH } = bounds;
 
-  // If the content already starts exactly at (0, 0) we can skip Pass 2.
-  const needsShift = minX !== 0 || minY !== 0;
-
-  if (!needsShift) {
-    return { shapes: pass1Shapes, width: tightW, height: tightH };
+  if (minX === 0 && minY === 0) {
+    return { svg: pass1Svg, width: tightW, height: tightH };
   }
 
-  // ── 5. Pass 2 — translate content so tight bbox origin → (0, 0) ─────────
-  // Wrap the Pass-1 DOM (which already has the viewBox-origin correction) in
-  // another <g translate(-minX, -minY)> and update the viewBox to the tight
-  // dimensions.  This is done in the DOM so that SVGLoader receives clean
-  // (0,0)-origin input and produces shapes directly in [0,tightW]×[0,tightH]
-  // without any post-processing of shape coordinates.
   const svgEl2 = doc.querySelector("svg")!;
   wrapAndReframe(doc, svgEl2, -minX, -minY, tightW, tightH);
 
-  const pass2Svg    = new XMLSerializer().serializeToString(doc);
-  const pass2Shapes = parseSvgString(pass2Svg);
+  const pass2Svg = new XMLSerializer().serializeToString(doc);
+  return { svg: pass2Svg, width: tightW, height: tightH };
+}
 
-  return {
-    shapes: pass2Shapes.length > 0 ? pass2Shapes : pass1Shapes,
-    width:  tightW,
-    height: tightH,
-  };
+export function parseSVGContent(svgContent: string): ParsedSVG {
+  const { svg, width, height } = normalizeSvgForParsing(svgContent);
+  const shapes = parseSvgString(svg);
+  return { shapes, width, height };
+}
+
+/**
+ * Group every visibly-filled SVGLoader path into a list of color regions.
+ * Each entry has a normalised hex color and the THREE.Shapes that share it.
+ *
+ * - Skips paths whose fill is `none`, `transparent`, or empty.
+ * - Skips paths whose fill matches the dominant outer-shell silhouette color
+ *   (as resolved by `extractSvgColor`) so the silhouette is never duplicated
+ *   as a flat color body.
+ * - Applies the same two-pass bounding-box normalisation used by
+ *   `parseSVGContent` so returned shapes share the main shape's coordinate
+ *   space.
+ */
+export function parseSVGColorRegions(
+  svgContent: string,
+): Array<{ color: string; shapes: THREE.Shape[] }> {
+  const { svg } = normalizeSvgForParsing(svgContent);
+
+  const loader = new SVGLoader();
+  let data: ReturnType<typeof loader.parse>;
+  try {
+    data = loader.parse(svg);
+  } catch {
+    return [];
+  }
+
+  // Group every visibly-filled path by its resolved hex color.  The dominant
+  // silhouette is identified by total filled area (sum across the colour's
+  // shapes minus their holes), not by document order — this keeps detail
+  // paths that happen to appear first in the SVG from being mis-classified
+  // as the silhouette.
+  const groups = new Map<string, THREE.Shape[]>();
+  for (const path of data.paths) {
+    const fill = (path.userData as { style?: { fill?: string } } | undefined)?.style?.fill;
+    if (!fill || fill === "none" || fill === "transparent" || fill === "") continue;
+    let hex: string;
+    try {
+      hex = `#${new THREE.Color(fill).getHexString()}`;
+    } catch {
+      continue;
+    }
+    const shapes = SVGLoader.createShapes(path);
+    if (shapes.length === 0) continue;
+    const list = groups.get(hex);
+    if (list) list.push(...shapes);
+    else groups.set(hex, [...shapes]);
+  }
+
+  if (groups.size === 0) return [];
+
+  // Determine the dominant outer silhouette colour by total filled area.
+  let dominant: string | null = null;
+  let dominantArea = -Infinity;
+  for (const [color, shapes] of groups.entries()) {
+    let area = 0;
+    for (const s of shapes) area += filledShapeArea(s);
+    if (area > dominantArea) {
+      dominantArea = area;
+      dominant = color;
+    }
+  }
+
+  return Array.from(groups.entries())
+    .filter(([color]) => color !== dominant)
+    .map(([color, shapes]) => ({ color, shapes }));
+}
+
+/** Absolute polygon area via the shoelace formula. */
+function polyAreaAbs(pts: THREE.Vector2[]): number {
+  let a = 0;
+  const n = pts.length;
+  if (n < 3) return 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  }
+  return Math.abs(a) * 0.5;
+}
+
+/** Net filled area of a THREE.Shape (outer minus holes), tessellated coarsely. */
+function filledShapeArea(shape: THREE.Shape): number {
+  const { shape: outer, holes } = shape.extractPoints(12);
+  let area = polyAreaAbs(outer);
+  for (const hole of holes) area -= polyAreaAbs(hole);
+  return Math.max(0, area);
 }
 
 /**

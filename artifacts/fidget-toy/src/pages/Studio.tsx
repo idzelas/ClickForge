@@ -18,18 +18,29 @@ import {
   type FidgetSettingsBlob,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { parseSVGContent, extractSvgColor } from "@/lib/svgParser";
+import { parseSVGContent, parseSVGColorRegions, extractSvgColor } from "@/lib/svgParser";
 import RasterToSvgModal from "@/components/RasterToSvgModal";
 import {
   createOuterShellGeometries,
   createInnerClickerGeometries,
   createKeyRingGeometry,
+  createColorLayerGeometries,
   validateGeometry,
   getShellTotalDepth,
   DEFAULT_SETTINGS,
   type FidgetSettings,
   type GeometryWarning,
 } from "@/lib/fidgetGeometry";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { exportSTL, export3MF, exportSTLMerged, export3MFMerged, exportOBJ, exportOBJMerged, type MeshGroups } from "@/lib/exporters";
 import {
   Upload,
@@ -131,6 +142,54 @@ interface ParsedSVGState {
 type ViewMode = "solid" | "wireframe" | "xray";
 
 // ─── Outer shell: outer wall ring + inner fill (floor + pocket walls) ────
+
+/**
+ * Renders the per-color flat extruded slab bodies that pair with the outer
+ * shell.  Each region becomes its own mesh in the SVG's true fill color and
+ * is bumped by `i * 0.01` mm in local z purely to avoid preview z-fighting
+ * when nested regions overlap.  The geometry itself remains flush with the
+ * shell's bottom face (z=0 .. colorLayerThickness) so exports are unaffected
+ * by the preview-only stagger.
+ */
+function ColorLayersGroup({
+  geometries,
+  settings,
+  svgWidth,
+  svgHeight,
+  fitCheck,
+  groupRef,
+}: {
+  geometries: Array<{ color: string; geometry: THREE.BufferGeometry }>;
+  settings: FidgetSettings;
+  svgWidth: number;
+  svgHeight: number;
+  fitCheck: boolean;
+  groupRef: React.RefObject<THREE.Group | null>;
+}) {
+  const flip = settings.flipShell ?? false;
+  const shellDepth = getShellTotalDepth(settings);
+  const groupZ = flip ? shellDepth / 2 : -shellDepth / 2;
+
+  const svgBase = settings.lockDimension === "width" ? svgWidth : svgHeight;
+  const scale = svgBase > 0 ? settings.targetSizeMm / svgBase : 1;
+  const modelHalfW = (svgWidth * scale) / 2;
+  const separationX = Math.max(35, modelHalfW + 12);
+  const groupX = fitCheck ? 0 : -separationX;
+
+  // The per-mesh `i * 0.01` z bump is preview-only — exporters intentionally
+  // do NOT use these mesh transforms; they read geometries directly and
+  // apply only the parent group's world matrix (see getMeshGroups()).
+  return (
+    <group ref={groupRef} position={[groupX, 0, groupZ]} rotation={[flip ? Math.PI : 0, 0, 0]}>
+      {geometries.map((g, i) => (
+        <mesh key={`${g.color}-${i}`} position={[0, 0, i * 0.01]}>
+          <primitive object={g.geometry} />
+          <meshStandardMaterial color={g.color} metalness={0.05} roughness={0.7} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
 
 function OuterShellGroup({
   shapes,
@@ -950,6 +1009,30 @@ export default function Studio() {
   // the 3D scene recalculates.  Committed on blur or Enter.
   const [draftSizeMm, setDraftSizeMm] = useState<string>(String(DEFAULT_SETTINGS.targetSizeMm));
 
+  // Per-color flat regions parsed from the SVG fill palette.
+  const colorRegions = useMemo(
+    () => (svgState ? parseSVGColorRegions(svgState.rawSvg) : []),
+    [svgState],
+  );
+
+  // Extruded slab geometry for each color region — recomputed when the SVG,
+  // its fill palette, or the colorLayerThickness setting changes.
+  const colorLayerGeometries = useMemo(
+    () =>
+      svgState
+        ? createColorLayerGeometries(colorRegions, settings, svgState.width, svgState.height)
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      colorRegions,
+      settings.colorLayerThickness,
+      settings.mirrorShell,
+      settings.targetSizeMm,
+      settings.lockDimension,
+      svgState,
+    ],
+  );
+
   const geoWarnings = useMemo<GeometryWarning[]>(
     () => svgState
       ? validateGeometry(svgState.shapes, settings, svgState.width, svgState.height)
@@ -1004,6 +1087,11 @@ export default function Studio() {
   const clickerWallsRef = useRef<THREE.Mesh | null>(null);
   const bossBaseRef = useRef<THREE.Mesh | null>(null);
   const bossMainRef = useRef<THREE.Mesh | null>(null);
+  // World-space transform of the color-layer assembly.  We export from raw
+  // geometries + this group's matrixWorld, NOT from individual mesh refs,
+  // so the per-mesh `i * 0.01` preview z-bump stays preview-only.
+  const colorLayersGroupRef = useRef<THREE.Group | null>(null);
+  const [stlColorWarnOpen, setStlColorWarnOpen] = useState(false);
 
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
@@ -1144,6 +1232,23 @@ export default function Studio() {
     clicker: [clickerFloorRef, clickerWallsRef, bossBaseRef, bossMainRef]
       .map((r) => r.current).filter((m): m is THREE.Mesh => m !== null),
     keyRing: settings.keyRingEnabled ? keyRingRef.current : null,
+    colorLayers: (() => {
+      const group = colorLayersGroupRef.current;
+      if (!group || colorLayerGeometries.length === 0) return [];
+      // Make sure world matrices reflect any pending transform updates so
+      // exported color layers land aligned with the outer shell.
+      group.updateMatrixWorld(true);
+      return colorLayerGeometries.map((g, i) => {
+        const mesh = new THREE.Mesh(g.geometry);
+        // Bypass per-mesh local transform (which carries the preview z-bump
+        // when reading from live ColorLayersGroup children) and use only the
+        // parent group's world matrix.  Exporters consume mesh.matrixWorld.
+        mesh.matrixAutoUpdate = false;
+        mesh.matrix.identity();
+        mesh.matrixWorld.copy(group.matrixWorld);
+        return { name: `color_layer_${i + 1}`, color: g.color, mesh };
+      });
+    })(),
   });
 
   const getMeshes = (): THREE.Mesh[] => {
@@ -1151,7 +1256,7 @@ export default function Studio() {
     return [...g.shell, ...g.clicker, ...(g.keyRing ? [g.keyRing] : [])];
   };
 
-  const handleExportSTL = async () => {
+  const performExportSTL = async () => {
     const groups = getMeshGroups();
     if (!groups.shell.length && !groups.clicker.length) {
       toast({ title: "Upload an SVG first", variant: "destructive" });
@@ -1161,9 +1266,20 @@ export default function Studio() {
       await exportSTLMerged(groups);
       toast({ title: "STL exported — two files in zip" });
     } else {
-      exportSTL(getMeshes());
+      // Color layers are intentionally omitted from STL (no color support).
+      exportSTL(groups);
       toast({ title: "STL exported" });
     }
+  };
+
+  const handleExportSTL = async () => {
+    // If the SVG carries color regions, warn that STL will drop the color
+    // information before exporting.  Confirming proceeds; cancelling aborts.
+    if (colorRegions.length > 0) {
+      setStlColorWarnOpen(true);
+      return;
+    }
+    await performExportSTL();
   };
 
   const handleExport3MF = async () => {
@@ -1172,13 +1288,12 @@ export default function Studio() {
       toast({ title: "Upload an SVG first", variant: "destructive" });
       return;
     }
-    if (mergeForExport) {
-      await export3MFMerged(groups);
-      toast({ title: "3MF exported — two objects inside" });
-    } else {
-      await export3MF(getMeshes());
-      toast({ title: "3MF exported" });
-    }
+    await export3MF(groups);
+    toast({
+      title: mergeForExport
+        ? "3MF exported — per-part objects with color"
+        : "3MF exported",
+    });
   };
 
   const handleExportOBJ = async () => {
@@ -1187,13 +1302,12 @@ export default function Studio() {
       toast({ title: "Upload an SVG first", variant: "destructive" });
       return;
     }
-    if (mergeForExport) {
-      exportOBJMerged(groups);
-      toast({ title: "OBJ exported — two objects inside" });
-    } else {
-      exportOBJ(getMeshes());
-      toast({ title: "OBJ exported" });
-    }
+    exportOBJ(groups);
+    toast({
+      title: mergeForExport
+        ? "OBJ exported — per-part objects with color"
+        : "OBJ exported",
+    });
   };
 
   const handleSave = async () => {
@@ -1680,6 +1794,34 @@ export default function Studio() {
               </CollapsibleTrigger>
               <CollapsibleContent className="pt-5 space-y-6">
 
+                {/* Color regions — only shown when the SVG actually has them */}
+                {colorRegions.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
+                      Color Regions
+                      <InfoTooltip text="Each non-silhouette fill in the SVG becomes a flat extruded slab flush with the bottom face of the outer shell. Sized for multi-color FDM (single-extruder color swap or AMS) — typically 0.4–0.6 mm." />
+                    </div>
+                    <div className="space-y-3 pl-0">
+                      <SliderRow
+                        label="Layer thickness"
+                        value={settings.colorLayerThickness ?? DEFAULT_SETTINGS.colorLayerThickness}
+                        min={0.1}
+                        max={1.0}
+                        step={0.01}
+                        unit="mm"
+                        onChange={(v) => setSetting("colorLayerThickness", v)}
+                        defaultValue={DEFAULT_SETTINGS.colorLayerThickness}
+                        onReset={() => setSetting("colorLayerThickness", DEFAULT_SETTINGS.colorLayerThickness)}
+                      />
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {colorRegions.length} region{colorRegions.length === 1 ? "" : "s"} detected.
+                        Exported as a composite outer shell in 3MF and as a vertex-color OBJ zip;
+                        STL drops color information.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Switch cavity (keycap + cavity dims) */}
                 <div>
                   <div className="flex items-center gap-1.5 mb-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
@@ -2109,6 +2251,16 @@ export default function Studio() {
                       activeHighlights={sliderHighlight}
                       viewMode={viewMode}
                     />
+                    {colorLayerGeometries.length > 0 && (
+                      <ColorLayersGroup
+                        geometries={colorLayerGeometries}
+                        settings={settings}
+                        svgWidth={svgState.width}
+                        svgHeight={svgState.height}
+                        fitCheck={fitCheckMode}
+                        groupRef={colorLayersGroupRef}
+                      />
+                    )}
                     <InnerClickerGroup
                       shapes={svgState.shapes}
                       settings={settings}
@@ -2245,6 +2397,35 @@ export default function Studio() {
           onApply={handleRasterApply}
         />
       )}
+
+      {/* STL color-loss warning — STL has no concept of color, so per-region
+          slabs are dropped and only the merged shell + clicker bodies survive.
+          Confirming proceeds with the colorless STL export. */}
+      <AlertDialog open={stlColorWarnOpen} onOpenChange={setStlColorWarnOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>STL doesn’t support colors</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your SVG has {colorRegions.length} color region
+              {colorRegions.length === 1 ? "" : "s"}. STL files only contain
+              geometry, so the per-color flat bodies will be dropped — you’ll
+              get just the outer shell and inner clicker. Use 3MF or OBJ to
+              keep color information.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                setStlColorWarnOpen(false);
+                await performExportSTL();
+              }}
+            >
+              Export STL anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
