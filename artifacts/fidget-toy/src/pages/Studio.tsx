@@ -291,19 +291,20 @@ function ModelDimensionAnnotation({
   // Height line – spans Z from top to bottom, placed left of model
   const hx  = centerX - hw - OFFSET;
 
-  const labelBg     = `rgba(0,0,0,0.72)`;
-  const labelBorder = color;
   const labelStyle: React.CSSProperties = {
-    color:        "#f0f0f0",
-    background:   labelBg,
-    border:       `1px solid ${labelBorder}`,
-    borderRadius: 4,
-    padding:      "1px 6px",
-    fontSize:     10,
-    fontFamily:   "ui-monospace, monospace",
+    color:        "#ffffff",
+    background:   "rgba(10,10,18,0.92)",
+    border:       `1.5px solid ${color}`,
+    borderRadius: 5,
+    padding:      "3px 10px",
+    fontSize:     13,
+    fontWeight:   700,
+    fontFamily:   "ui-monospace, 'Cascadia Code', monospace",
     whiteSpace:   "nowrap",
     pointerEvents:"none",
-    lineHeight:   "16px",
+    lineHeight:   "1.4",
+    letterSpacing: "0.02em",
+    boxShadow:    `0 2px 8px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06)`,
   };
 
   // Tiny vertical offset so lines don't z-fight with the grid (grid sits at lineY)
@@ -332,11 +333,9 @@ function ModelDimensionAnnotation({
       {/* leader lines */}
       <Line points={[[centerX - hw - 0.5, y, -hh], [hx + TICK, y, -hh]]} color={color} lineWidth={0.6} />
       <Line points={[[centerX - hw - 0.5, y, +hh], [hx + TICK, y, +hh]]} color={color} lineWidth={0.6} />
-      {/* label — rotated 90° in screen space */}
-      <Html position={[hx - 7, y, 0]} center>
-        <div style={{ ...labelStyle, transform: "rotate(-90deg)" }}>
-          {heightMm.toFixed(2)} mm
-        </div>
+      {/* label — horizontal, no rotation (easier to read in 3D view) */}
+      <Html position={[hx - 10, y, 0]} center>
+        <div style={labelStyle}>{heightMm.toFixed(2)} mm</div>
       </Html>
     </>
   );

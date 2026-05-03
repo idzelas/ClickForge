@@ -80,9 +80,14 @@ export function parseSVGContent(svgContent: string): ParsedSVG {
   }
 
   // ── 4. Compute tight bounding box across all visible shape points ───────
+  // Sample at 128 to match the downstream fidgetGeometry.ts pipeline which
+  // also calls shape.getPoints(128).  Using the same resolution avoids
+  // creating over-dense LineCurve polylines (Three.js LineCurves return all
+  // their endpoints regardless of the `divisions` arg, so 256 sample points
+  // would double the vertex count compared to 128).
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const shape of rawShapes) {
-    for (const pt of shape.getPoints(256)) {
+    for (const pt of shape.getPoints(128)) {
       if (pt.x < minX) minX = pt.x;
       if (pt.y < minY) minY = pt.y;
       if (pt.x > maxX) maxX = pt.x;
@@ -102,15 +107,17 @@ export function parseSVGContent(svgContent: string): ParsedSVG {
   // as the shape's centre.  After translation, (tightW/2, tightH/2) is the
   // true content centre, so the existing formula works correctly without any
   // changes to the geometry pipeline.
+  // Using getPoints(128) keeps the translated shape at 128 segments — matching
+  // the downstream sampling resolution and avoiding vertex-count doubling.
   const shapes = rawShapes.map(shape => {
-    const outerPts = shape.getPoints(256).map(
+    const outerPts = shape.getPoints(128).map(
       (p: THREE.Vector2) => new THREE.Vector2(p.x - minX, p.y - minY)
     );
     const s = new THREE.Shape();
     s.setFromPoints(outerPts);
 
     for (const hole of shape.holes) {
-      const holePts = hole.getPoints(256).map(
+      const holePts = hole.getPoints(128).map(
         (p: THREE.Vector2) => new THREE.Vector2(p.x - minX, p.y - minY)
       );
       const h = new THREE.Path();
