@@ -18,6 +18,9 @@ export type MeshGroups = {
  * A single export part: one mesh that becomes its own top-level object in
  * 3MF / its own `o` block in OBJ.  No boolean merging is performed — parts
  * are kept fully separate so slicers can assign per-part materials.
+ *
+ * The mesh's geometry has already been baked to world space, rotated to the
+ * slicer Z-up convention, and translated so the assembly's minimum Z = 0.
  */
 type ExportPart = {
   name: string;
@@ -27,35 +30,90 @@ type ExportPart = {
 };
 
 // ---------------------------------------------------------------------------
-// Build the canonical part list
+// Slicer-orientation correction
 // ---------------------------------------------------------------------------
+//
+// The viewer wraps the entire scene in a `<group rotation={[-PI/2, 0, 0]}>`
+// so the extrusion axis (geometry +Z) shows as world +Y, putting the flat
+// base face on world -Y.  When we bake `mesh.matrixWorld` into geometry, that
+// scene rotation gets baked too — the exported file ends up with -Y as the
+// bottom face, which slicers (PrusaSlicer, Bambu Studio, Cura) can't open
+// correctly because they assume Z-up with the build plate at Z = 0.
+//
+// To undo the viewer rotation we apply Rx(+PI/2) after baking matrixWorld.
+// This brings the original extrusion axis back to +Z (slicer up) so the flat
+// base face sits at the model's minimum Z.  We then translate every part
+// uniformly so that minimum Z = 0 — i.e., the model sits on the build plate.
 
 /**
- * Convert MeshGroups into a flat ExportPart[].  Color layers are always
- * included as separate parts carrying their hex color so downstream writers
- * can emit per-part material info (3MF basematerials, OBJ vertex colors).
+ * Bake `mesh.matrixWorld` into a clone of its geometry, then apply the
+ * Rx(+PI/2) correction that undoes the viewer's scene rotation.  The
+ * returned geometry is independent of the source mesh and safe to mutate.
+ */
+function bakeAndOrientGeometry(mesh: THREE.Mesh): THREE.BufferGeometry {
+  const geo = mesh.geometry.clone();
+  geo.applyMatrix4(mesh.matrixWorld);
+  // Rotate +90° around X to undo the viewer's -90° X rotation, restoring the
+  // original geometry-Z (extrusion axis) as world Z (slicer up).
+  const fix = new THREE.Matrix4().makeRotationX(Math.PI / 2);
+  geo.applyMatrix4(fix);
+  return geo;
+}
+
+/**
+ * Convert MeshGroups into a flat ExportPart[] with each part's geometry
+ * already baked, oriented Z-up, and translated so the assembly's minimum Z
+ * across all parts is exactly 0.  Color layers are always included as
+ * separate parts carrying their hex color so downstream writers can emit
+ * per-part material info (3MF basematerials, OBJ vertex colors).
  */
 function buildPartsFromGroups(groups: MeshGroups): ExportPart[] {
-  const parts: ExportPart[] = [];
+  type Pending = { name: string; geo: THREE.BufferGeometry; color?: string };
+  const pending: Pending[] = [];
 
   groups.shell.forEach((m, i) =>
-    parts.push({ name: m.name || `shell_${i + 1}`, mesh: m }),
+    pending.push({ name: m.name || `shell_${i + 1}`, geo: bakeAndOrientGeometry(m) }),
   );
   if (groups.keyRing) {
-    parts.push({ name: groups.keyRing.name || "key_ring", mesh: groups.keyRing });
+    pending.push({
+      name: groups.keyRing.name || "key_ring",
+      geo: bakeAndOrientGeometry(groups.keyRing),
+    });
   }
   groups.clicker.forEach((m, i) =>
-    parts.push({ name: m.name || `clicker_${i + 1}`, mesh: m }),
+    pending.push({ name: m.name || `clicker_${i + 1}`, geo: bakeAndOrientGeometry(m) }),
   );
   (groups.colorLayers ?? []).forEach((c, i) =>
-    parts.push({
+    pending.push({
       name: c.name || `color_layer_${i + 1}`,
-      mesh: c.mesh,
+      geo: bakeAndOrientGeometry(c.mesh),
       color: c.color,
     }),
   );
 
-  return parts;
+  // Compute the global minimum Z across every vertex of every part, then
+  // translate the entire assembly up so the bottom face sits at Z = 0.
+  let minZ = Infinity;
+  for (const p of pending) {
+    const pos = p.geo.attributes.position;
+    if (!pos) continue;
+    for (let i = 0; i < pos.count; i++) {
+      const z = pos.getZ(i);
+      if (z < minZ) minZ = z;
+    }
+  }
+  if (Number.isFinite(minZ) && minZ !== 0) {
+    const lift = new THREE.Matrix4().makeTranslation(0, 0, -minZ);
+    for (const p of pending) p.geo.applyMatrix4(lift);
+  }
+
+  // Wrap each oriented geometry in a fresh Mesh so the writers below can
+  // continue to consume `THREE.Mesh` instances uniformly.
+  return pending.map((p) => {
+    const mesh = new THREE.Mesh(p.geo);
+    mesh.name = p.name;
+    return { name: p.name, mesh, color: p.color };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -69,11 +127,12 @@ function buildPartsFromGroups(groups: MeshGroups): ExportPart[] {
  */
 export function exportSTL(groups: MeshGroups): void {
   const exporter = new STLExporter();
+  // STL is color-blind: build parts from a groups object with colorLayers
+  // stripped out so they don't end up in the file.
+  const parts = buildPartsFromGroups({ ...groups, colorLayers: [] });
+  if (parts.length === 0) return;
   const scene = new THREE.Scene();
-  // Color layers omitted — STL is color-blind.
-  for (const m of groups.shell) scene.add(cloneMeshForExport(m));
-  if (groups.keyRing) scene.add(cloneMeshForExport(groups.keyRing));
-  for (const m of groups.clicker) scene.add(cloneMeshForExport(m));
+  for (const p of parts) scene.add(p.mesh);
   const stlString = exporter.parse(scene, { binary: false });
   downloadBlob(
     new Blob([stlString], { type: "application/octet-stream" }),
@@ -84,21 +143,33 @@ export function exportSTL(groups: MeshGroups): void {
 /**
  * Two-file STL zip: outer_shell.stl (shell + key ring) and inner_clicker.stl.
  * Color layers are still dropped — same color-blind limitation as STL itself.
+ *
+ * Both sub-files share the same Z-floor-to-zero baseline so they line up
+ * correctly when re-imported into a slicer.
  */
 export async function exportSTLMerged(groups: MeshGroups): Promise<void> {
   const exporter = new STLExporter();
   const zip = new JSZip();
 
-  const shellMeshes = groups.keyRing ? [...groups.shell, groups.keyRing] : groups.shell;
-  if (shellMeshes.length > 0) {
+  // Build everything together first so the Z-floor lift is applied across
+  // both groups consistently.
+  const parts = buildPartsFromGroups({ ...groups, colorLayers: [] });
+  const shellNames = new Set<string>();
+  groups.shell.forEach((m, i) => shellNames.add(m.name || `shell_${i + 1}`));
+  if (groups.keyRing) shellNames.add(groups.keyRing.name || "key_ring");
+
+  const shellParts = parts.filter((p) => shellNames.has(p.name));
+  const clickerParts = parts.filter((p) => !shellNames.has(p.name));
+
+  if (shellParts.length > 0) {
     const scene = new THREE.Scene();
-    for (const m of shellMeshes) scene.add(cloneMeshForExport(m));
+    for (const p of shellParts) scene.add(p.mesh);
     zip.file("outer_shell.stl", exporter.parse(scene, { binary: false }));
   }
 
-  if (groups.clicker.length > 0) {
+  if (clickerParts.length > 0) {
     const scene = new THREE.Scene();
-    for (const m of groups.clicker) scene.add(cloneMeshForExport(m));
+    for (const p of clickerParts) scene.add(p.mesh);
     zip.file("inner_clicker.stl", exporter.parse(scene, { binary: false }));
   }
 
@@ -220,13 +291,18 @@ function buildPartsXml(parts: ExportPart[]): string {
 </model>`;
 }
 
-/** Emit `<vertices>…</vertices><triangles>…</triangles>` for one mesh. */
+/**
+ * Emit `<vertices>…</vertices><triangles>…</triangles>` for one mesh.
+ *
+ * The mesh's geometry has already been baked + oriented + lifted by
+ * buildPartsFromGroups, so we read positions directly without any further
+ * matrix application.
+ */
 function meshToVerticesAndTriangles(mesh: THREE.Mesh): {
   vertices: string;
   triangles: string;
 } {
-  const geo = mesh.geometry.clone();
-  geo.applyMatrix4(mesh.matrixWorld);
+  const geo = mesh.geometry;
 
   let verts = "";
   let tris = "";
@@ -295,15 +371,18 @@ async function buildZip(modelXml: string): Promise<Blob> {
  * vertex-color extension `v x y z r g b`; uncolored parts use the standard
  * `v x y z` form.  Faces use 1-indexed global vertex numbering offset by
  * `vertexOffsetIn` (the count of `v` lines already written earlier).
+ *
+ * The mesh's geometry has already been baked + oriented + lifted by
+ * buildPartsFromGroups, so we read positions directly.
  */
 function writeObjPart(
   part: ExportPart,
   vertexOffsetIn: number,
 ): { text: string; vertexCount: number } {
-  const geo = part.mesh.geometry.clone();
-  geo.applyMatrix4(part.mesh.matrixWorld);
-  const nonIndexed = geo.index ? geo.toNonIndexed() : geo;
-  const pos = nonIndexed.attributes.position;
+  const geo = part.mesh.geometry.index
+    ? part.mesh.geometry.toNonIndexed()
+    : part.mesh.geometry;
+  const pos = geo.attributes.position;
   if (!pos || pos.count === 0) return { text: "", vertexCount: 0 };
 
   const colored = !!part.color;
@@ -347,15 +426,6 @@ function hexToRgb01(hex: string): [number, number, number] {
   const g = parseInt(full.slice(3, 5), 16) / 255;
   const b = parseInt(full.slice(5, 7), 16) / 255;
   return [r, g, b];
-}
-
-/** Clone a mesh and bake its world transform into the geometry. */
-function cloneMeshForExport(mesh: THREE.Mesh): THREE.Mesh {
-  const geo = mesh.geometry.clone();
-  geo.applyMatrix4(mesh.matrixWorld);
-  const out = new THREE.Mesh(geo);
-  out.name = mesh.name;
-  return out;
 }
 
 function downloadBlob(blob: Blob, filename: string): void {
