@@ -159,8 +159,8 @@ export function createOuterShellGeometries(
   const insetAmount      = settings.insetAmount      ?? DEFAULT_SETTINGS.insetAmount;
   const pinHoleRadius    = settings.pinHoleRadius    ?? DEFAULT_SETTINGS.pinHoleRadius;
   const pinHoleDepth     = settings.pinHoleDepth     ?? DEFAULT_SETTINGS.pinHoleDepth;
-  // In clicker mode the clearance is applied to the shell (expanded outward),
-  // so the SVG boundary maps exactly to the clicker body.
+  // In clicker mode the clearance is applied to the clicker (shrunk inward),
+  // so the shell pocket is generated from the smaller clicker body.
   const CLEARANCE = settings.clearanceMm ?? DEFAULT_SETTINGS.clearanceMm;
 
   const pocketDepth = Math.min(keycapPocketDepth, innerFillDepth - 1);
@@ -181,16 +181,19 @@ export function createOuterShellGeometries(
   let innerShape: THREE.Shape;
 
   if (svgIsClickerShape) {
-    // SVG defines the clicker body exactly.  The shell pocket must be wider by
-    // (insetAmount + CLEARANCE): insetAmount = physical wall thickness, CLEARANCE = slide gap.
-    // Uses outsetPolygon (self-intersection removal) so concave shapes stay clean.
-    innerShape = cloneShape(svgShape);
-    const shellExpand = insetAmount + CLEARANCE;
+    // SVG defines the shell pocket boundary exactly.
+    // Shrink the clicker by CLEARANCE first so the shell still gets the correct
+    // wall thickness around the smaller clicker shape.
+    innerShape =
+      offsetShapeInward(svgShape, CLEARANCE) ??
+      offsetShapeInward(svgShape, Math.min(CLEARANCE, 0.8)) ??
+      cloneShape(svgShape);
+    const shellExpand = insetAmount;
     outerShape =
-      offsetShapeOutward(svgShape, shellExpand) ??
-      offsetShapeOutward(svgShape, Math.min(shellExpand, 0.8)) ??
-      offsetShapeOutward(svgShape, 0.3) ??
-      expandShapeOutward(cloneShape(svgShape), shellExpand);
+      offsetShapeOutward(innerShape, shellExpand) ??
+      offsetShapeOutward(innerShape, Math.min(shellExpand, 0.8)) ??
+      offsetShapeOutward(innerShape, 0.3) ??
+      expandShapeOutward(cloneShape(innerShape), shellExpand);
   } else {
     // Normal mode: SVG is the outer wall; inset to get the inner pocket.
     outerShape = cloneShape(svgShape);
@@ -326,10 +329,11 @@ export function createInnerClickerGeometries(
   const svgShape = transformToMm(baseShape, scale, svgWidth, svgHeight, mirrorClicker);
 
   // Normal mode: SVG = shell outer wall → clicker = SVG − insetAmount − clearance
-  // Clicker mode: SVG IS the clicker body exactly; clearance is already baked into
-  //               the shell expansion in createOuterShellGeometries, so no deduction here.
+  // Clicker mode: SVG is the clicker body, so shrink it by clearance first.
   const clickerShape: THREE.Shape = svgIsClickerShape
-    ? cloneShape(svgShape)
+    ? (offsetShapeInward(svgShape, CLEARANCE) ??
+       offsetShapeInward(svgShape, Math.min(CLEARANCE, 0.8)) ??
+       cloneShape(svgShape))
     : (offsetShapeInward(svgShape, insetAmount + CLEARANCE) ??
        offsetShapeInward(svgShape, CLEARANCE) ??
        cloneShape(svgShape));
