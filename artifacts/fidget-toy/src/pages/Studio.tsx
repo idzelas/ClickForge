@@ -514,8 +514,7 @@ function MeshHighlightOverlay({
   });
 
   return (
-    <mesh position={position} renderOrder={2}>
-      <primitive object={geometry} />
+    <mesh geometry={geometry} position={position} renderOrder={2}>
       <meshBasicMaterial
         ref={matRef}
         color="#22eeff"
