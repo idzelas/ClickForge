@@ -169,7 +169,7 @@ async function loadImageData(
 
 function traceToSVG(imageData: ImageData, opts: TraceOptions): string {
   const ltres = opts.simplification * 1.2;
-  return ImageTracer.imagedataToSVG(imageData, {
+  const svg = ImageTracer.imagedataToSVG(imageData, {
     numberofcolors: opts.numColors,
     ltres,
     qtres: ltres,
@@ -178,6 +178,11 @@ function traceToSVG(imageData: ImageData, opts: TraceOptions): string {
     linefilter: opts.simplification > 5,
     rightangleenhance: false,
   }) as string;
+  return svg
+    .replace(/\sfill="none"/g, "")
+    .replace(/\sstroke="none"/g, "")
+    .replace(/\sfill='none'/g, "")
+    .replace(/\sstroke='none'/g, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -532,6 +537,7 @@ export default function RasterToSvgModal({ file, onClose, onApply }: Props) {
                   </div>
                 )}
               </div>
+
             </div>
           </div>
         </div>
