@@ -63,6 +63,7 @@ function OuterShellGroup({
   fitCheck,
   onBounds,
   color,
+  activeHighlights = [],
 }: {
   shapes: THREE.Shape[];
   settings: FidgetSettings;
@@ -75,6 +76,7 @@ function OuterShellGroup({
   fitCheck: boolean;
   onBounds?: (b: { w: number; h: number }) => void;
   color: string;
+  activeHighlights: MeshKey[];
 }) {
   const geos = useMemo(
     () => createOuterShellGeometries(shapes, settings, svgWidth, svgHeight),
@@ -101,6 +103,7 @@ function OuterShellGroup({
 
   const groupX = fitCheck ? 0 : -separationX;
 
+  const hl = (k: MeshKey) => activeHighlights.includes(k);
   return (
     <group position={[groupX, 0, groupZ]} rotation={[flip ? Math.PI : 0, 0, 0]}>
       {/* Outer wall ring — ghost in fit-check so you can see inside */}
@@ -115,19 +118,24 @@ function OuterShellGroup({
           depthWrite={!fitCheck}
         />
       </mesh>
+      <MeshHighlightOverlay geometry={geos.outerWall} position={[0, 0, geos.zOffsets.outerWall]} highlighted={hl("shell_outer")} />
 
       {/* Solid floor — never penetrated */}
       <mesh ref={innerFillFloorRef} position={[0, 0, geos.zOffsets.innerFillFloor]} castShadow receiveShadow>
         <primitive object={geos.innerFillFloor} />
         <meshStandardMaterial color={color} metalness={0.15} roughness={0.55} />
       </mesh>
+      <MeshHighlightOverlay geometry={geos.innerFillFloor} position={[0, 0, geos.zOffsets.innerFillFloor]} highlighted={hl("shell_floor")} />
 
       {/* MX pin-hole section — deepest part of pocket (only when enabled) */}
       {geos.innerFillPinSection && (
-        <mesh ref={innerFillPinSectionRef} position={[0, 0, geos.zOffsets.innerFillPinSection]} castShadow receiveShadow>
-          <primitive object={geos.innerFillPinSection} />
-          <meshStandardMaterial color={color} metalness={0.15} roughness={0.55} />
-        </mesh>
+        <>
+          <mesh ref={innerFillPinSectionRef} position={[0, 0, geos.zOffsets.innerFillPinSection]} castShadow receiveShadow>
+            <primitive object={geos.innerFillPinSection} />
+            <meshStandardMaterial color={color} metalness={0.15} roughness={0.55} />
+          </mesh>
+          <MeshHighlightOverlay geometry={geos.innerFillPinSection} position={[0, 0, geos.zOffsets.innerFillPinSection]} highlighted={hl("shell_pin")} />
+        </>
       )}
 
       {/* Keycap square pocket walls — upper / shallower section of pocket */}
@@ -135,6 +143,7 @@ function OuterShellGroup({
         <primitive object={geos.innerFillWalls} />
         <meshStandardMaterial color={color} metalness={0.15} roughness={0.55} />
       </mesh>
+      <MeshHighlightOverlay geometry={geos.innerFillWalls} position={[0, 0, geos.zOffsets.innerFillWalls]} highlighted={hl("shell_walls")} />
     </group>
   );
 }
@@ -153,6 +162,7 @@ function InnerClickerGroup({
   fitCheck,
   onBounds,
   color,
+  activeHighlights = [],
 }: {
   shapes: THREE.Shape[];
   settings: FidgetSettings;
@@ -165,6 +175,7 @@ function InnerClickerGroup({
   fitCheck: boolean;
   onBounds?: (b: { w: number; h: number }) => void;
   color: string;
+  activeHighlights: MeshKey[];
 }) {
   const geos = useMemo(
     () => createInnerClickerGeometries(shapes, settings, svgWidth, svgHeight),
@@ -210,26 +221,34 @@ function InnerClickerGroup({
 
   // Clicker geometry is already centred at local z=0 (spans –depth/2 → +depth/2),
   // so a 180° rotation around X keeps it centred without any extra translation.
+  const hl = (k: MeshKey) => activeHighlights.includes(k);
   return (
     <group position={groupPos} rotation={[flip ? Math.PI : 0, 0, 0]}>
       <mesh ref={clickerFloorRef} position={[0, 0, floorZ]} castShadow receiveShadow>
         <primitive object={geos.floor} />
         <meshStandardMaterial color={color} metalness={0.25} roughness={0.45} />
       </mesh>
+      <MeshHighlightOverlay geometry={geos.floor} position={[0, 0, floorZ]} highlighted={hl("click_floor")} />
+
       <mesh ref={clickerWallsRef} position={[0, 0, wallsZ]} castShadow receiveShadow>
         <primitive object={geos.walls} />
         <meshStandardMaterial color={color} metalness={0.25} roughness={0.45} />
       </mesh>
+      <MeshHighlightOverlay geometry={geos.walls} position={[0, 0, wallsZ]} highlighted={hl("click_walls")} />
+
       {/* Boss base — solid disk that closes the bottom of the cross pocket */}
       <mesh ref={bossBaseRef} position={[0, 0, bossBaseZ]} castShadow receiveShadow>
         <primitive object={geos.bossBase} />
         <meshStandardMaterial color={color} metalness={0.3} roughness={0.4} />
       </mesh>
+      <MeshHighlightOverlay geometry={geos.bossBase} position={[0, 0, bossBaseZ]} highlighted={hl("click_boss")} />
+
       {/* Boss main — cylindrical shell with MX cross pocket cut through the top */}
       <mesh ref={bossMainRef} position={[0, 0, bossMainZ]} castShadow receiveShadow>
         <primitive object={geos.bossMain} />
         <meshStandardMaterial color={color} metalness={0.3} roughness={0.4} />
       </mesh>
+      <MeshHighlightOverlay geometry={geos.bossMain} position={[0, 0, bossMainZ]} highlighted={hl("click_boss")} />
     </group>
   );
 }
@@ -436,6 +455,79 @@ function ViewCube({
   );
 }
 
+// ─── Mesh highlight overlay ───────────────────────────────────────────────
+
+type MeshKey =
+  | "shell_outer" | "shell_floor" | "shell_walls" | "shell_pin"
+  | "click_floor" | "click_walls" | "click_boss";
+
+/** Maps each FidgetSettings slider key to the mesh(es) it most directly affects. */
+const SLIDER_HIGHLIGHTS: Partial<Record<keyof FidgetSettings, MeshKey[]>> = {
+  totalDepth:         ["shell_outer"],
+  innerFillDepth:     ["shell_floor", "shell_walls"],
+  keycapPocketDepth:  ["shell_walls"],
+  insetAmount:        ["shell_outer", "shell_floor", "shell_walls"],
+  pinHoleDepth:       ["shell_pin"],
+  pinHoleRadius:      ["shell_pin"],
+  keycapSize:         ["shell_walls"],
+  clickerSquareSize:  ["click_walls"],
+  clickerSquareDepth: ["click_walls"],
+  pocketOffsetX:      ["shell_walls", "click_boss", "click_walls"],
+  pocketOffsetY:      ["shell_walls", "click_boss", "click_walls"],
+  clickerTotalDepth:  ["click_floor", "click_walls"],
+  clickerFloorDepth:  ["click_floor"],
+  bossDiameter:       ["click_boss"],
+  bossHeight:         ["click_boss"],
+  bossFloorGap:       ["click_boss"],
+  crossSize:          ["click_boss"],
+  crossDepth:         ["click_boss"],
+  crossArmWidth:      ["click_boss"],
+  targetSizeMm:       ["shell_outer", "shell_floor", "shell_walls", "click_floor", "click_walls", "click_boss"],
+};
+
+/**
+ * Additive emissive overlay on top of one mesh face.
+ * Uses AdditiveBlending so the base material is never altered — only bright
+ * light is added on top.  Opacity lerps to/from 0 in ~100 ms via useFrame.
+ */
+function MeshHighlightOverlay({
+  geometry,
+  position,
+  highlighted,
+}: {
+  geometry: THREE.BufferGeometry;
+  position: [number, number, number];
+  highlighted: boolean;
+}) {
+  const matRef  = useRef<THREE.MeshBasicMaterial>(null);
+  const opRef   = useRef(0);
+  const hlRef   = useRef(highlighted);
+  useEffect(() => { hlRef.current = highlighted; }, [highlighted]);
+
+  useFrame((_, delta) => {
+    const target = hlRef.current ? 0.40 : 0;
+    opRef.current += (target - opRef.current) * Math.min(1, delta / 0.10);
+    if (matRef.current) {
+      matRef.current.opacity = opRef.current;
+      matRef.current.visible = opRef.current > 0.002;
+    }
+  });
+
+  return (
+    <mesh position={position} renderOrder={2}>
+      <primitive object={geometry} />
+      <meshBasicMaterial
+        ref={matRef}
+        color="#22eeff"
+        transparent
+        opacity={0}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </mesh>
+  );
+}
+
 // ─── Dimension annotation ─────────────────────────────────────────────────
 // Renders X-width and Z-height dimension callouts around one model footprint.
 // Lives OUTSIDE the rotation group so all positions are world-space.
@@ -615,6 +707,11 @@ export default function Studio() {
   const [fitCheckMode, setFitCheckMode] = useState(false);
   const [showDimensions, setShowDimensions] = useState(true);
   const [recenterKey, setRecenterKey] = useState(0);
+  const [sliderHighlight, setSliderHighlight] = useState<MeshKey[]>([]);
+  const hl = (keys: MeshKey[]) => ({
+    onHighlightIn:  () => setSliderHighlight(keys),
+    onHighlightOut: () => setSliderHighlight([]),
+  });
   const [shellBounds, setShellBounds] = useState({ w: 0, h: 0 });
 
   // ViewCube shared state refs (avoids re-renders)
@@ -995,6 +1092,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("totalDepth", v)}
+                  {...hl(["shell_outer"])}
                 />
                 <SliderRow
                   label="Housing depth"
@@ -1004,6 +1102,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("innerFillDepth", v)}
+                  {...hl(["shell_floor", "shell_walls"])}
                 />
                 <SliderRow
                   label="Keycap pocket depth"
@@ -1013,6 +1112,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("keycapPocketDepth", v)}
+                  {...hl(["shell_walls"])}
                 />
                 <SliderRow
                   label="Wall thickness"
@@ -1022,6 +1122,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("insetAmount", v)}
+                  {...hl(["shell_outer", "shell_floor", "shell_walls"])}
                 />
 
                 {/* Switch pin holes — sub-section under Outer Shell */}
@@ -1046,6 +1147,7 @@ export default function Studio() {
                         step={0.01}
                         unit="mm"
                         onChange={(v) => setSetting("pinHoleDepth", v)}
+                        {...hl(["shell_pin"])}
                       />
                       <SliderRow
                         label="Print clearance"
@@ -1055,6 +1157,7 @@ export default function Studio() {
                         step={0.01}
                         unit="mm"
                         onChange={(v) => setSetting("pinHoleRadius", v)}
+                        {...hl(["shell_pin"])}
                       />
                     </div>
                   )}
@@ -1076,6 +1179,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("keycapSize", v)}
+                  {...hl(["shell_walls"])}
                 />
                 <SliderRow
                   label="Switch cavity size"
@@ -1085,6 +1189,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("clickerSquareSize", v)}
+                  {...hl(["click_walls"])}
                 />
                 <SliderRow
                   label="Switch cavity depth"
@@ -1094,6 +1199,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("clickerSquareDepth", v)}
+                  {...hl(["click_walls"])}
                 />
 
                 {/* Pocket position nudge */}
@@ -1110,6 +1216,7 @@ export default function Studio() {
                     step={0.1}
                     unit="mm"
                     onChange={(v) => setSetting("pocketOffsetX", v)}
+                    {...hl(["shell_walls", "click_boss", "click_walls"])}
                   />
                   <SliderRow
                     label="Offset Y"
@@ -1119,6 +1226,7 @@ export default function Studio() {
                     step={0.1}
                     unit="mm"
                     onChange={(v) => setSetting("pocketOffsetY", v)}
+                    {...hl(["shell_walls", "click_boss", "click_walls"])}
                   />
                 </div>
               </div>
@@ -1156,6 +1264,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("clickerTotalDepth", v)}
+                  {...hl(["click_floor", "click_walls"])}
                 />
                 <SliderRow
                   label="Solid floor"
@@ -1165,6 +1274,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("clickerFloorDepth", v)}
+                  {...hl(["click_floor"])}
                 />
                 <SliderRow
                   label="Boss diameter"
@@ -1174,6 +1284,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("bossDiameter", v)}
+                  {...hl(["click_boss"])}
                 />
                 <SliderRow
                   label="Boss height"
@@ -1183,6 +1294,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("bossHeight", v)}
+                  {...hl(["click_boss"])}
                 />
                 <SliderRow
                   label="Boss floor gap"
@@ -1192,6 +1304,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("bossFloorGap", v)}
+                  {...hl(["click_boss"])}
                 />
                 <div className="pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
                   MX cross pocket
@@ -1204,6 +1317,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("crossSize", v)}
+                  {...hl(["click_boss"])}
                 />
                 <SliderRow
                   label="Cross depth"
@@ -1213,6 +1327,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("crossDepth", v)}
+                  {...hl(["click_boss"])}
                 />
                 <SliderRow
                   label="Arm width"
@@ -1222,6 +1337,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("crossArmWidth", v)}
+                  {...hl(["click_boss"])}
                 />
               </div>
             </div>
@@ -1388,6 +1504,7 @@ export default function Studio() {
                       fitCheck={fitCheckMode}
                       onBounds={setShellBounds}
                       color={settings.shellColor ?? DEFAULT_SETTINGS.shellColor}
+                      activeHighlights={sliderHighlight}
                     />
                     <InnerClickerGroup
                       shapes={svgState.shapes}
@@ -1401,6 +1518,7 @@ export default function Studio() {
                       fitCheck={fitCheckMode}
                       onBounds={setClickerBounds}
                       color={settings.clickerColor ?? DEFAULT_SETTINGS.clickerColor}
+                      activeHighlights={sliderHighlight}
                     />
                   </>
                 ) : (
@@ -1518,6 +1636,8 @@ function SliderRow({
   step,
   unit,
   onChange,
+  onHighlightIn,
+  onHighlightOut,
 }: {
   label: string;
   value: number;
@@ -1526,6 +1646,8 @@ function SliderRow({
   step: number;
   unit: string;
   onChange: (v: number) => void;
+  onHighlightIn?: () => void;
+  onHighlightOut?: () => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
 
@@ -1536,7 +1658,7 @@ function SliderRow({
   };
 
   return (
-    <div>
+    <div onMouseEnter={onHighlightIn} onMouseLeave={onHighlightOut}>
       <div className="flex justify-between items-center mb-1">
         <Label className="text-xs">{label}</Label>
         <div className="flex items-center gap-1">
