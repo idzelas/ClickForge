@@ -42,6 +42,7 @@ import {
   Scan,
   Mouse,
   MoveHorizontal,
+  RotateCcw,
 } from "lucide-react";
 
 // ─── Colour utilities ─────────────────────────────────────────────────────
@@ -1237,6 +1238,28 @@ export default function Studio() {
                 ))}
               </div>
             )}
+
+            {/* Settings header + reset */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Settings</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSettings((prev) => ({
+                    ...DEFAULT_SETTINGS,
+                    // Keep auto-extracted preview colours from the uploaded SVG
+                    shellColor: prev.shellColor,
+                    clickerColor: prev.clickerColor,
+                  }));
+                  setDraftSizeMm(String(DEFAULT_SETTINGS.targetSizeMm));
+                }}
+                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                title="Reset all sliders and checkboxes to defaults"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Reset
+              </button>
+            </div>
 
             {/* Outer shell dimensions */}
             <div>
