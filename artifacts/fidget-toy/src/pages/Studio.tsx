@@ -184,43 +184,46 @@ function OuterShellGroup({
   return (
     <group position={[groupX, 0, groupZ]} rotation={[flip ? Math.PI : 0, 0, 0]}>
       {/* Outer wall ring — ghost in fit-check so you can see inside */}
-      <mesh ref={outerWallRef} position={[0, 0, geos.zOffsets.outerWall]} castShadow={!fitCheck && !isXray} receiveShadow>
+      <mesh ref={outerWallRef} position={[0, 0, geos.zOffsets.outerWall]} castShadow={!fitCheck && !isXray && !isWire} receiveShadow>
         <primitive object={geos.outerWall} />
         <meshStandardMaterial
           color={color}
-          metalness={isWire ? 0 : 0.25}
+          metalness={0.25}
           roughness={0.45}
-          wireframe={isWire}
-          opacity={fitCheck ? 0.28 : isXray ? 0.3 : 1}
-          transparent={fitCheck || isXray}
-          depthWrite={!fitCheck && !isXray}
+          opacity={isWire ? 0 : fitCheck ? 0.28 : isXray ? 0.3 : 1}
+          transparent={isWire || fitCheck || isXray}
+          depthWrite={!isWire && !fitCheck && !isXray}
         />
       </mesh>
+      {isWire && <EdgeWireframe geometry={geos.outerWall} position={[0, 0, geos.zOffsets.outerWall]} color={color} />}
       <MeshHighlightOverlay geometry={geos.outerWall} position={[0, 0, geos.zOffsets.outerWall]} highlighted={hl("shell_outer")} />
 
       {/* Solid floor — never penetrated */}
-      <mesh ref={innerFillFloorRef} position={[0, 0, geos.zOffsets.innerFillFloor]} castShadow={!isXray} receiveShadow>
+      <mesh ref={innerFillFloorRef} position={[0, 0, geos.zOffsets.innerFillFloor]} castShadow={!isXray && !isWire} receiveShadow>
         <primitive object={geos.innerFillFloor} />
-        <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.15} roughness={0.55} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
+        <meshStandardMaterial color={color} metalness={0.15} roughness={0.55} opacity={isWire ? 0 : isXray ? 0.3 : 1} transparent={isWire || isXray} depthWrite={!isWire && !isXray} />
       </mesh>
+      {isWire && <EdgeWireframe geometry={geos.innerFillFloor} position={[0, 0, geos.zOffsets.innerFillFloor]} color={color} />}
       <MeshHighlightOverlay geometry={geos.innerFillFloor} position={[0, 0, geos.zOffsets.innerFillFloor]} highlighted={hl("shell_floor")} />
 
       {/* MX pin-hole section — deepest part of pocket (only when enabled) */}
       {geos.innerFillPinSection && (
         <>
-          <mesh ref={innerFillPinSectionRef} position={[0, 0, geos.zOffsets.innerFillPinSection]} castShadow={!isXray} receiveShadow>
+          <mesh ref={innerFillPinSectionRef} position={[0, 0, geos.zOffsets.innerFillPinSection]} castShadow={!isXray && !isWire} receiveShadow>
             <primitive object={geos.innerFillPinSection} />
-            <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.15} roughness={0.55} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
+            <meshStandardMaterial color={color} metalness={0.15} roughness={0.55} opacity={isWire ? 0 : isXray ? 0.3 : 1} transparent={isWire || isXray} depthWrite={!isWire && !isXray} />
           </mesh>
+          {isWire && <EdgeWireframe geometry={geos.innerFillPinSection} position={[0, 0, geos.zOffsets.innerFillPinSection]} color={color} />}
           <MeshHighlightOverlay geometry={geos.innerFillPinSection} position={[0, 0, geos.zOffsets.innerFillPinSection]} highlighted={hl("shell_pin")} />
         </>
       )}
 
       {/* Keycap square pocket walls — upper / shallower section of pocket */}
-      <mesh ref={innerFillWallsRef} position={[0, 0, geos.zOffsets.innerFillWalls]} castShadow={!isXray} receiveShadow>
+      <mesh ref={innerFillWallsRef} position={[0, 0, geos.zOffsets.innerFillWalls]} castShadow={!isXray && !isWire} receiveShadow>
         <primitive object={geos.innerFillWalls} />
-        <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.15} roughness={0.55} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
+        <meshStandardMaterial color={color} metalness={0.15} roughness={0.55} opacity={isWire ? 0 : isXray ? 0.3 : 1} transparent={isWire || isXray} depthWrite={!isWire && !isXray} />
       </mesh>
+      {isWire && <EdgeWireframe geometry={geos.innerFillWalls} position={[0, 0, geos.zOffsets.innerFillWalls]} color={color} />}
       <MeshHighlightOverlay geometry={geos.innerFillWalls} position={[0, 0, geos.zOffsets.innerFillWalls]} highlighted={hl("shell_walls")} />
     </group>
   );
@@ -306,32 +309,57 @@ function InnerClickerGroup({
   const hl = (k: MeshKey) => activeHighlights.includes(k);
   return (
     <group position={groupPos} rotation={[flip ? Math.PI : 0, 0, 0]}>
-      <mesh ref={clickerFloorRef} position={[0, 0, floorZ]} castShadow={!isXray} receiveShadow>
+      <mesh ref={clickerFloorRef} position={[0, 0, floorZ]} castShadow={!isXray && !isWire} receiveShadow>
         <primitive object={geos.floor} />
-        <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.25} roughness={0.45} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
+        <meshStandardMaterial color={color} metalness={0.25} roughness={0.45} opacity={isWire ? 0 : isXray ? 0.3 : 1} transparent={isWire || isXray} depthWrite={!isWire && !isXray} />
       </mesh>
+      {isWire && <EdgeWireframe geometry={geos.floor} position={[0, 0, floorZ]} color={color} />}
       <MeshHighlightOverlay geometry={geos.floor} position={[0, 0, floorZ]} highlighted={hl("click_floor")} />
 
-      <mesh ref={clickerWallsRef} position={[0, 0, wallsZ]} castShadow={!isXray} receiveShadow>
+      <mesh ref={clickerWallsRef} position={[0, 0, wallsZ]} castShadow={!isXray && !isWire} receiveShadow>
         <primitive object={geos.walls} />
-        <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.25} roughness={0.45} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
+        <meshStandardMaterial color={color} metalness={0.25} roughness={0.45} opacity={isWire ? 0 : isXray ? 0.3 : 1} transparent={isWire || isXray} depthWrite={!isWire && !isXray} />
       </mesh>
+      {isWire && <EdgeWireframe geometry={geos.walls} position={[0, 0, wallsZ]} color={color} />}
       <MeshHighlightOverlay geometry={geos.walls} position={[0, 0, wallsZ]} highlighted={hl("click_walls")} />
 
       {/* Boss base — solid disk that closes the bottom of the cross pocket */}
-      <mesh ref={bossBaseRef} position={[0, 0, bossBaseZ]} castShadow={!isXray} receiveShadow>
+      <mesh ref={bossBaseRef} position={[0, 0, bossBaseZ]} castShadow={!isXray && !isWire} receiveShadow>
         <primitive object={geos.bossBase} />
-        <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.3} roughness={0.4} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
+        <meshStandardMaterial color={color} metalness={0.3} roughness={0.4} opacity={isWire ? 0 : isXray ? 0.3 : 1} transparent={isWire || isXray} depthWrite={!isWire && !isXray} />
       </mesh>
+      {isWire && <EdgeWireframe geometry={geos.bossBase} position={[0, 0, bossBaseZ]} color={color} />}
       <MeshHighlightOverlay geometry={geos.bossBase} position={[0, 0, bossBaseZ]} highlighted={hl("click_boss")} />
 
       {/* Boss main — cylindrical shell with MX cross pocket cut through the top */}
-      <mesh ref={bossMainRef} position={[0, 0, bossMainZ]} castShadow={!isXray} receiveShadow>
+      <mesh ref={bossMainRef} position={[0, 0, bossMainZ]} castShadow={!isXray && !isWire} receiveShadow>
         <primitive object={geos.bossMain} />
-        <meshStandardMaterial color={color} metalness={isWire ? 0 : 0.3} roughness={0.4} wireframe={isWire} opacity={isXray ? 0.3 : 1} transparent={isXray} depthWrite={!isXray} />
+        <meshStandardMaterial color={color} metalness={0.3} roughness={0.4} opacity={isWire ? 0 : isXray ? 0.3 : 1} transparent={isWire || isXray} depthWrite={!isWire && !isXray} />
       </mesh>
+      {isWire && <EdgeWireframe geometry={geos.bossMain} position={[0, 0, bossMainZ]} color={color} />}
       <MeshHighlightOverlay geometry={geos.bossMain} position={[0, 0, bossMainZ]} highlighted={hl("click_boss")} />
     </group>
+  );
+}
+
+// ─── Edge wireframe overlay — EdgesGeometry lines, Blender-style ─────────
+
+function EdgeWireframe({
+  geometry,
+  position,
+  color,
+}: {
+  geometry: THREE.BufferGeometry;
+  position?: [number, number, number];
+  color: string;
+}) {
+  // 15° threshold keeps only meaningful shape edges, skips tessellation lines
+  const edges = useMemo(() => new THREE.EdgesGeometry(geometry, 15), [geometry]);
+  useEffect(() => () => edges.dispose(), [edges]);
+  return (
+    <lineSegments geometry={edges} position={position}>
+      <lineBasicMaterial color={color} />
+    </lineSegments>
   );
 }
 
