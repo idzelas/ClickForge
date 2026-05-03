@@ -459,7 +459,17 @@ function InnerClickerGroup({
   const modelHalfW = (svgWidth * scale) / 2;
   const separationX = Math.max(35, modelHalfW + 12);
 
-  const normalGroupPos: [number, number, number] = [separationX, 0, 0];
+  // Anchor the clicker's bottom face to the same world-Z baseline the shell
+  // uses (-shellDepth/2 → grid plane after the scene's -PI/2 X rotation).
+  // Geometry runs from local z=-clickerTotalDepth/2 to +clickerTotalDepth/2,
+  // so to put the bottom face at -shellDepth/2 we shift the group up by
+  // clickerTotalDepth/2 from that baseline.  When flipped, local +z becomes
+  // world -z, so we mirror to +shellDepth/2 - clickerTotalDepth/2 so the part
+  // still rests on the same baseline instead of poking through it.
+  const clickerBaseZ = flip
+    ? shellDepth / 2 - clickerTotalDepth / 2
+    : -shellDepth / 2 + clickerTotalDepth / 2;
+  const normalGroupPos: [number, number, number] = [separationX, 0, clickerBaseZ];
   const fitCheckGroupPos: [number, number, number] = [
     0,
     0,
