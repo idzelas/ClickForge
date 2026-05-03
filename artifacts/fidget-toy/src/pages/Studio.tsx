@@ -297,8 +297,9 @@ function AutoCamera({
     const fovRad   = (40 * Math.PI) / 180;
     const distance = sceneRadius / Math.tan(fovRad / 2);
 
-    // Maintain the original viewing angle (camera at [0, 60, 100] → ~31° above horizontal).
-    const baseY = 60, baseZ = 100;
+    // More overhead angle to view the flat-lying models like a print-bed preview.
+    // [0, 100, 60] → ~59° above horizontal gives a clear top-down-ish view.
+    const baseY = 100, baseZ = 60;
     const baseMag = Math.sqrt(baseY * baseY + baseZ * baseZ);
     camera.position.set(0, (baseY / baseMag) * distance, (baseZ / baseMag) * distance);
     camera.lookAt(0, 0, 0);
@@ -352,13 +353,15 @@ export default function Studio() {
   // grid always sits flush under the models regardless of targetSizeMm.
   const sceneMetrics = useMemo(() => {
     if (!svgState) {
-      return { gridY: -25, gridSize: 300, cellSize: 5, sectionSize: 25, fadeDistance: 200 };
+      // Placeholder box depth is 22 mm; after +90° scene rotation its back face
+      // is at world Y = -(22/2) = -11. Put the grid just there.
+      return { gridY: -11, gridSize: 300, cellSize: 5, sectionSize: 25, fadeDistance: 200 };
     }
     const svgBase = settings.lockDimension === "width" ? svgState.width : svgState.height;
     const scale   = svgBase > 0 ? settings.targetSizeMm / svgBase : 1;
-    // Model silhouette spans ±halfH in Y (ExtrudeGeometry lies in XY, extruded along Z).
-    const modelHalfH = (svgState.height * scale) / 2;
-    const gridY = -modelHalfH;
+    // Models now lie flat (extruded along world Y after scene rotation).
+    // The back face sits at world Y = -totalDepth/2, which is the print-bed floor.
+    const gridY = -(settings.totalDepth / 2);
 
     // Scale grid cell/section density so lines aren't too dense for huge models
     // or too sparse for tiny ones.  Target ~10 cells across the model.
@@ -1019,7 +1022,7 @@ export default function Studio() {
           )}
 
           <Canvas
-            camera={{ position: [0, 60, 100], fov: 40 }}
+            camera={{ position: [0, 100, 60], fov: 40 }}
             shadows
             style={{ background: "hsl(240 15% 8%)" }}
           >
@@ -1030,34 +1033,40 @@ export default function Studio() {
             <directionalLight position={[-30, 30, -20]} intensity={0.35} />
 
             <Suspense fallback={null}>
-              {svgState ? (
-                <>
-                  <OuterShellGroup
-                    shapes={svgState.shapes}
-                    settings={settings}
-                    svgWidth={svgState.width}
-                    svgHeight={svgState.height}
-                    outerWallRef={outerWallRef}
-                    innerFillFloorRef={innerFillFloorRef}
-                    innerFillPinSectionRef={innerFillPinSectionRef}
-                    innerFillWallsRef={innerFillWallsRef}
-                    fitCheck={fitCheckMode}
-                  />
-                  <InnerClickerGroup
-                    shapes={svgState.shapes}
-                    settings={settings}
-                    svgWidth={svgState.width}
-                    svgHeight={svgState.height}
-                    clickerFloorRef={clickerFloorRef}
-                    clickerWallsRef={clickerWallsRef}
-                    bossBaseRef={bossBaseRef}
-                    bossMainRef={bossMainRef}
-                    fitCheck={fitCheckMode}
-                  />
-                </>
-              ) : (
-                <PlaceholderMeshes />
-              )}
+              {/* Rotate entire scene so models lie flat on the print bed:
+                  +90° around X maps extrusion-Z → world -Y (depth goes down),
+                  putting the pocket face at world +Y (up) and the flat base
+                  at world -Y (on the bed). */}
+              <group rotation={[Math.PI / 2, 0, 0]}>
+                {svgState ? (
+                  <>
+                    <OuterShellGroup
+                      shapes={svgState.shapes}
+                      settings={settings}
+                      svgWidth={svgState.width}
+                      svgHeight={svgState.height}
+                      outerWallRef={outerWallRef}
+                      innerFillFloorRef={innerFillFloorRef}
+                      innerFillPinSectionRef={innerFillPinSectionRef}
+                      innerFillWallsRef={innerFillWallsRef}
+                      fitCheck={fitCheckMode}
+                    />
+                    <InnerClickerGroup
+                      shapes={svgState.shapes}
+                      settings={settings}
+                      svgWidth={svgState.width}
+                      svgHeight={svgState.height}
+                      clickerFloorRef={clickerFloorRef}
+                      clickerWallsRef={clickerWallsRef}
+                      bossBaseRef={bossBaseRef}
+                      bossMainRef={bossMainRef}
+                      fitCheck={fitCheckMode}
+                    />
+                  </>
+                ) : (
+                  <PlaceholderMeshes />
+                )}
+              </group>
             </Suspense>
 
             <Grid
