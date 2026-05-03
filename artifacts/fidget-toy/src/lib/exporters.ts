@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
+import { OBJExporter } from "three/examples/jsm/exporters/OBJExporter.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import JSZip from "jszip";
 
@@ -27,6 +28,19 @@ export async function export3MF(meshes: THREE.Mesh[]): Promise<void> {
   const xml = buildObjectXml([{ name: "fidget_toy", meshes }]);
   const blob = await buildZip(xml);
   downloadBlob(blob, "fidget-toy.3mf");
+}
+
+export function exportOBJ(meshes: THREE.Mesh[]): void {
+  const exporter = new OBJExporter();
+  const scene = new THREE.Scene();
+  meshes.forEach((m) => {
+    const clone = m.clone();
+    if (!clone.name) clone.name = m.name || "part";
+    scene.add(clone);
+  });
+  const objString = exporter.parse(scene);
+  const blob = new Blob([objString], { type: "text/plain" });
+  downloadBlob(blob, "fidget-toy.obj");
 }
 
 // ---------------------------------------------------------------------------
@@ -73,6 +87,33 @@ export async function export3MFMerged(groups: MeshGroups): Promise<void> {
   const xml  = buildObjectXml(objects);
   const blob = await buildZip(xml);
   downloadBlob(blob, "fidget-toy-merged.3mf");
+}
+
+export function exportOBJMerged(groups: MeshGroups): void {
+  const exporter = new OBJExporter();
+
+  const shellMeshes = groups.keyRing ? [...groups.shell, groups.keyRing] : groups.shell;
+  const shellGeo = mergeInWorldSpace(shellMeshes);
+  const clickerGeo = mergeInWorldSpace(groups.clicker);
+
+  const scene = new THREE.Scene();
+
+  if (shellGeo) {
+    const mesh = new THREE.Mesh(shellGeo);
+    mesh.name = "outer_shell";
+    scene.add(mesh);
+  }
+  if (clickerGeo) {
+    const mesh = new THREE.Mesh(clickerGeo);
+    mesh.name = "inner_clicker";
+    scene.add(mesh);
+  }
+
+  if (scene.children.length === 0) return;
+
+  const objString = exporter.parse(scene);
+  const blob = new Blob([objString], { type: "text/plain" });
+  downloadBlob(blob, "fidget-toy-merged.obj");
 }
 
 // ---------------------------------------------------------------------------

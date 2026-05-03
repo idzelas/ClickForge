@@ -27,7 +27,7 @@ import {
   type FidgetSettings,
   type GeometryWarning,
 } from "@/lib/fidgetGeometry";
-import { exportSTL, export3MF, exportSTLMerged, export3MFMerged, type MeshGroups } from "@/lib/exporters";
+import { exportSTL, export3MF, exportSTLMerged, export3MFMerged, exportOBJ, exportOBJMerged, type MeshGroups } from "@/lib/exporters";
 import {
   Upload,
   Download,
@@ -1098,6 +1098,21 @@ export default function Studio() {
     }
   };
 
+  const handleExportOBJ = async () => {
+    const groups = getMeshGroups();
+    if (!groups.shell.length && !groups.clicker.length) {
+      toast({ title: "Upload an SVG first", variant: "destructive" });
+      return;
+    }
+    if (mergeForExport) {
+      exportOBJMerged(groups);
+      toast({ title: "OBJ exported — two objects inside" });
+    } else {
+      exportOBJ(getMeshes());
+      toast({ title: "OBJ exported" });
+    }
+  };
+
   const handleSave = async () => {
     if (!svgState) {
       toast({ title: "Upload an SVG first", variant: "destructive" });
@@ -1875,6 +1890,15 @@ export default function Studio() {
               >
                 <Download className="h-4 w-4 mr-2" />
                 Export 3MF
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleExportOBJ}
+                disabled={!svgState}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export OBJ
               </Button>
             </div>
 
