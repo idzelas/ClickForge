@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { insetPolygon } from "./polygonOffset";
+import { insetPolygon, outsetPolygon } from "./polygonOffset";
 
 export interface FidgetSettings {
   totalDepth: number;          // outer wall total height (mm), e.g. 22
@@ -176,8 +176,13 @@ export function createOuterShellGeometries(
   if (svgIsClickerShape) {
     // SVG defines the clicker body → it also defines the pocket the clicker
     // slides into.  Expand outward by insetAmount to get the physical shell wall.
+    // Uses outsetPolygon (which removes self-intersections) so concave shapes
+    // don't produce crossing/poking walls.
     innerShape = cloneShape(svgShape);
     outerShape =
+      offsetShapeOutward(svgShape, insetAmount) ??
+      offsetShapeOutward(svgShape, Math.min(insetAmount, 0.8)) ??
+      offsetShapeOutward(svgShape, 0.3) ??
       expandShapeOutward(cloneShape(svgShape), insetAmount);
   } else {
     // Normal mode: SVG is the outer wall; inset to get the inner pocket.
@@ -434,6 +439,30 @@ function offsetShapeInward(shape: THREE.Shape, offsetMm: number): THREE.Shape | 
     (a, b) => polygonArea(b) - polygonArea(a)
   )[0];
 
+  if (largest.length < 3) return null;
+
+  const result = new THREE.Shape();
+  result.setFromPoints(largest);
+  return result;
+}
+
+/**
+ * Expand a THREE.Shape outward by `offsetMm` using the proper parallel-curve
+ * algorithm with self-intersection removal.  Concave shapes that would produce
+ * crossing walls with a naive miter join are handled correctly.
+ *
+ * Returns null only if the polygon is degenerate (fewer than 3 distinct pts).
+ */
+function offsetShapeOutward(shape: THREE.Shape, offsetMm: number): THREE.Shape | null {
+  if (offsetMm <= 0) return cloneShape(shape);
+  const pts = shape.getPoints(128);
+  const contours = outsetPolygon(pts, offsetMm);
+  if (contours.length === 0) return null;
+
+  // Pick the largest contour (outset should always produce exactly one)
+  const largest = contours.sort(
+    (a, b) => polygonArea(b) - polygonArea(a)
+  )[0];
   if (largest.length < 3) return null;
 
   const result = new THREE.Shape();

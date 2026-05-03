@@ -34,6 +34,117 @@ import * as THREE from "three";
 // ---------------------------------------------------------------------------
 
 /**
+ * Compute the outward offset of a closed 2-D polygon.
+ *
+ * Mirrors insetPolygon but shifts edges outward (away from the interior).
+ * Self-intersections that appear at concave corners — where outward-shifted
+ * walls from adjacent edges overlap — are removed by the same iterative
+ * crossing-removal algorithm used by insetPolygon.
+ *
+ * @param points    Closed polygon vertices (do NOT repeat the first point).
+ * @param offsetMm  Positive distance to expand every point outward (mm).
+ * @param miterLimit  Max vertex-displacement as a multiple of `offsetMm`
+ *                    before switching to a bevel. Default 4.
+ * @returns  Array of result contours (normally exactly one).
+ */
+export function outsetPolygon(
+  points: THREE.Vector2[],
+  offsetMm: number,
+  miterLimit = 4
+): THREE.Vector2[][] {
+  if (points.length < 3 || offsetMm <= 0) return [points.slice()];
+
+  const last  = points[points.length - 1];
+  const first = points[0];
+  const deduped =
+    last.distanceTo(first) < 1e-6 ? points.slice(0, -1) : points;
+  if (deduped.length < 3) return [deduped];
+
+  const area0 = signedArea(deduped);
+  if (Math.abs(area0) < 1e-9) return [deduped];
+
+  // Ensure CCW orientation (positive area)
+  const pts = area0 < 0 ? [...deduped].reverse() : [...deduped];
+
+  const raw = computeRawOutwardOffset(pts, offsetMm, miterLimit);
+  if (raw.length < 3) return [pts];
+
+  // Remove self-intersecting loops that arise at concave corners
+  // where adjacent outward-shifted edges cross each other.
+  const clean = removeSelfIntersections(raw);
+  if (clean.length < 3) return [pts];
+
+  // Outward offset always produces a larger CCW polygon — check area grew
+  if (signedArea(clean) <= area0) return [pts];
+
+  return [clean];
+}
+
+/**
+ * Raw outward offset: each edge is shifted by `d` along its outward normal.
+ * For a CCW polygon the outward normal of edge a→b is (+ey, −ex)/|e|.
+ */
+function computeRawOutwardOffset(
+  pts: THREE.Vector2[],
+  d: number,
+  miterLimit: number
+): THREE.Vector2[] {
+  const n = pts.length;
+  const edges: ShiftedEdge[] = [];
+
+  for (let i = 0; i < n; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % n];
+    const ex = b.x - a.x;
+    const ey = b.y - a.y;
+    const len = Math.hypot(ex, ey);
+    if (len < 1e-10) continue;
+
+    // Outward normal for CCW: rotate 90° CW → (+ey, −ex)
+    const nx =  ey / len;
+    const ny = -ex / len;
+
+    edges.push({
+      px: a.x + nx * d,
+      py: a.y + ny * d,
+      dx: ex / len,
+      dy: ey / len,
+    });
+  }
+
+  if (edges.length < 3) return [];
+
+  const maxDist = d * miterLimit;
+  const result: THREE.Vector2[] = [];
+
+  for (let i = 0; i < edges.length; i++) {
+    const e0 = edges[(i - 1 + edges.length) % edges.length];
+    const e1 = edges[i];
+    const denom = e0.dx * e1.dy - e0.dy * e1.dx;
+
+    if (Math.abs(denom) < 1e-10) {
+      result.push(new THREE.Vector2(e1.px, e1.py));
+      continue;
+    }
+
+    const t = ((e1.px - e0.px) * e1.dy - (e1.py - e0.py) * e1.dx) / denom;
+    const ix = e0.px + t * e0.dx;
+    const iy = e0.py + t * e0.dy;
+    const distFromE1 = Math.hypot(ix - e1.px, iy - e1.py);
+
+    if (distFromE1 > maxDist) {
+      const tClamp = t >= 0 ? Math.min(t, maxDist / (Math.hypot(e0.dx, e0.dy) || 1)) : 0;
+      result.push(new THREE.Vector2(e0.px + tClamp * e0.dx, e0.py + tClamp * e0.dy));
+      result.push(new THREE.Vector2(e1.px, e1.py));
+    } else {
+      result.push(new THREE.Vector2(ix, iy));
+    }
+  }
+
+  return result;
+}
+
+/**
  * Compute the inward offset of a closed 2-D polygon.
  *
  * @param points   Closed polygon vertices (do NOT repeat the first point).
