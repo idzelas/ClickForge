@@ -70,15 +70,18 @@ export function insetPolygon(
   const raw = computeRawOffset(pts, offsetMm, miterLimit);
   if (raw.length < 3) return [];
 
-  // Verify winding not flipped (would mean the shape over-collapsed)
-  const area1 = signedArea(raw);
-  if (area1 <= 0) return [];
+  // NOTE: Do NOT check signedArea(raw) here.
+  // For concave shapes, the inward offset creates self-intersecting loops whose
+  // reversed winding sign-cancels against the main body, making the algebraic
+  // area appear ≤ 0 even though the shape is perfectly healthy.  The
+  // self-intersection removal below fixes the polygon first; only the area of
+  // the *cleaned* polygon is a reliable collapse indicator.
 
-  // Remove self-intersecting loops
+  // Remove self-intersecting loops that arise when concave regions collapse
   const clean = removeSelfIntersections(raw);
   if (clean.length < 3) return [];
 
-  // Final area check
+  // Final area check on the cleaned polygon — this is the reliable test
   if (signedArea(clean) <= 0) return [];
 
   return [clean];
