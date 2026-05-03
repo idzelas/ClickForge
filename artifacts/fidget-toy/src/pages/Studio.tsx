@@ -475,7 +475,9 @@ function ViewCube({
 }) {
   const innerRef = useRef<HTMLDivElement>(null);
   const rafRef   = useRef<number>(0);
-  const dragState = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  // Store dir at pointerdown (before setPointerCapture changes e.target in subsequent events)
+  const dragState = useRef<{ x: number; y: number; moved: boolean; dir: string | null } | null>(null);
+  const [hoveredFace, setHoveredFace] = useState<string | null>(null);
 
   useEffect(() => {
     const tick = () => {
@@ -496,9 +498,16 @@ function ViewCube({
     return () => cancelAnimationFrame(rafRef.current);
   }, [stateRef]);
 
+  const getFaceDir = (target: EventTarget | null): string | null => {
+    const el = target as HTMLElement | null;
+    return el?.dataset.dir ?? (el?.parentElement?.dataset.dir ?? null);
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
+    // Read dir NOW before setPointerCapture re-routes subsequent e.target to the outer div
+    const dir = getFaceDir(e.target);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    dragState.current = { x: e.clientX, y: e.clientY, moved: false };
+    dragState.current = { x: e.clientX, y: e.clientY, moved: false, dir };
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -513,18 +522,14 @@ function ViewCube({
     dragState.current = { ...dragState.current, x: e.clientX, y: e.clientY };
   };
 
-  const onPointerUp = (e: React.PointerEvent) => {
-    if (!dragState.current?.moved) {
-      const target = e.target as HTMLElement;
-      const dir = target.dataset.dir ?? (target.parentElement as HTMLElement | null)?.dataset.dir;
-      if (dir) {
-        const [x, y, z] = dir.split(",").map(Number);
-        const dist = stateRef.current.dist || 130;
-        snapRef.current = {
-          pos: new THREE.Vector3(x, y, z).multiplyScalar(dist),
-          tgt: new THREE.Vector3(0, 0, 0),
-        };
-      }
+  const onPointerUp = () => {
+    if (dragState.current && !dragState.current.moved && dragState.current.dir) {
+      const [x, y, z] = dragState.current.dir.split(",").map(Number);
+      const dist = stateRef.current.dist || 130;
+      snapRef.current = {
+        pos: new THREE.Vector3(x, y, z).multiplyScalar(dist),
+        tgt: new THREE.Vector3(0, 0, 0),
+      };
     }
     dragState.current = null;
   };
@@ -544,11 +549,18 @@ function ViewCube({
           <div
             key={face.label}
             data-dir={face.dir}
+            onPointerEnter={() => setHoveredFace(face.dir)}
+            onPointerLeave={() => setHoveredFace(null)}
             style={{
               position: "absolute",
               inset: 0,
-              background: face.bg,
-              border: "1px solid rgba(255,255,255,0.15)",
+              background: hoveredFace === face.dir
+                ? face.bg.replace(/[\d.]+\)$/, (m) => `${Math.min(1, parseFloat(m) + 0.22)})`)
+                : face.bg,
+              border: hoveredFace === face.dir
+                ? "1.5px solid rgba(255,255,255,0.55)"
+                : "1px solid rgba(255,255,255,0.15)",
+              boxShadow: hoveredFace === face.dir ? "inset 0 0 12px rgba(255,255,255,0.18)" : "none",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -559,6 +571,7 @@ function ViewCube({
               transform: face.cssTransform,
               cursor: "pointer",
               userSelect: "none",
+              transition: "background 0.12s, box-shadow 0.12s, border 0.12s",
             }}
           >
             {face.label}
