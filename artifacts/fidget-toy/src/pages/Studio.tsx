@@ -38,6 +38,7 @@ import {
   Layers,
   AlertTriangle,
   HelpCircle,
+  Crosshair,
 } from "lucide-react";
 
 interface ParsedSVGState {
@@ -268,12 +269,14 @@ function AutoCamera({
   svgHeight,
   lockDimension,
   totalDepth,
+  recenterKey,
 }: {
   targetSizeMm: number;
   svgWidth: number;
   svgHeight: number;
   lockDimension: "width" | "height";
   totalDepth: number;
+  recenterKey: number;
 }) {
   const { camera, controls } = useThree();
 
@@ -309,9 +312,10 @@ function AutoCamera({
       (controls as { target: THREE.Vector3; update: () => void }).target.set(0, 0, 0);
       (controls as { target: THREE.Vector3; update: () => void }).update();
     }
-  // controls must be in deps so the effect re-runs once OrbitControls mounts
+  // controls must be in deps so the effect re-runs once OrbitControls mounts.
+  // recenterKey is incremented by the Re-center button to trigger on demand.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetSizeMm, svgWidth, svgHeight, lockDimension, totalDepth, controls]);
+  }, [targetSizeMm, svgWidth, svgHeight, lockDimension, totalDepth, controls, recenterKey]);
 
   return null;
 }
@@ -331,6 +335,7 @@ export default function Studio() {
   const [isDragging, setIsDragging] = useState(false);
   const [settings, setSettings] = useState<FidgetSettings>(DEFAULT_SETTINGS);
   const [fitCheckMode, setFitCheckMode] = useState(false);
+  const [recenterKey, setRecenterKey] = useState(0);
   // Draft value for the size input — lets the user finish typing before
   // the 3D scene recalculates.  Committed on blur or Enter.
   const [draftSizeMm, setDraftSizeMm] = useState<string>(String(DEFAULT_SETTINGS.targetSizeMm));
@@ -982,9 +987,17 @@ export default function Studio() {
             </div>
           )}
 
-          {/* ── Fit-check toggle ── */}
+          {/* ── Fit-check toggle + Re-center ── */}
           {svgState && (
             <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+              <button
+                onClick={() => setRecenterKey((k) => k + 1)}
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium border transition-colors bg-background/80 border-border text-muted-foreground hover:text-foreground backdrop-blur-sm"
+                title="Re-center — reset the camera to frame both parts"
+              >
+                <Crosshair className="h-3.5 w-3.5" />
+                Re-center
+              </button>
               <button
                 onClick={() => setFitCheckMode((v) => !v)}
                 className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium border transition-colors ${
@@ -1066,6 +1079,7 @@ export default function Studio() {
                 svgHeight={svgState.height}
                 lockDimension={settings.lockDimension}
                 totalDepth={settings.totalDepth}
+                recenterKey={recenterKey}
               />
             )}
 
