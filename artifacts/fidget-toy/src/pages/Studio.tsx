@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useMemo, Suspense, useEffect } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls, Grid } from "@react-three/drei";
+import { OrbitControls, Grid, Html, Line } from "@react-three/drei";
 import * as THREE from "three";
 import { useLocation, Link } from "wouter";
 import { useUser, useClerk } from "@clerk/react";
@@ -245,6 +245,93 @@ function PlaceholderMeshes() {
   );
 }
 
+// ─── Dimension annotation ─────────────────────────────────────────────────
+// Renders X-width and Z-height dimension callouts around one model footprint.
+// Lives OUTSIDE the rotation group so all positions are world-space.
+//
+// World-space layout after scene rotation [-π/2, 0, 0]:
+//   Model footprint: X ∈ [centerX−w/2, centerX+w/2], Z ∈ [−h/2, +h/2]
+//   Width  line → along X, at Z = +h/2 + OFFSET  (in front of model)
+//   Height line → along Z, at X = centerX−w/2 − OFFSET  (left of model)
+//   Both lines sit at Y = lineY (the floor/grid plane).
+
+function ModelDimensionAnnotation({
+  centerX,
+  widthMm,
+  heightMm,
+  color,
+  lineY,
+}: {
+  centerX: number;
+  widthMm: number;
+  heightMm: number;
+  color: string;
+  lineY: number;
+}) {
+  const OFFSET = 9;
+  const TICK   = 2.5;
+  const hw = widthMm  / 2;
+  const hh = heightMm / 2;
+
+  // Width line – spans X from left to right edge, placed in front of model
+  const wz  = hh + OFFSET;
+  const wx1 = centerX - hw;
+  const wx2 = centerX + hw;
+
+  // Height line – spans Z from top to bottom, placed left of model
+  const hx  = centerX - hw - OFFSET;
+
+  const labelBg     = `rgba(0,0,0,0.72)`;
+  const labelBorder = color;
+  const labelStyle: React.CSSProperties = {
+    color:        "#f0f0f0",
+    background:   labelBg,
+    border:       `1px solid ${labelBorder}`,
+    borderRadius: 4,
+    padding:      "1px 6px",
+    fontSize:     10,
+    fontFamily:   "ui-monospace, monospace",
+    whiteSpace:   "nowrap",
+    pointerEvents:"none",
+    lineHeight:   "16px",
+  };
+
+  // Tiny vertical offset so lines don't z-fight with the grid (grid sits at lineY)
+  const y = lineY + 0.15;
+
+  return (
+    <>
+      {/* ── Width dimension (X) ── */}
+      <Line points={[[wx1, y, wz], [wx2, y, wz]]} color={color} lineWidth={1.5} />
+      {/* end ticks */}
+      <Line points={[[wx1, y, wz - TICK], [wx1, y, wz + TICK]]} color={color} lineWidth={1.5} />
+      <Line points={[[wx2, y, wz - TICK], [wx2, y, wz + TICK]]} color={color} lineWidth={1.5} />
+      {/* leader lines from model edge to dimension line */}
+      <Line points={[[wx1, y, hh + 0.5], [wx1, y, wz - TICK]]} color={color} lineWidth={0.6} />
+      <Line points={[[wx2, y, hh + 0.5], [wx2, y, wz - TICK]]} color={color} lineWidth={0.6} />
+      {/* label */}
+      <Html position={[(wx1 + wx2) / 2, y, wz + 6]} center>
+        <div style={labelStyle}>{widthMm.toFixed(2)} mm</div>
+      </Html>
+
+      {/* ── Height dimension (Z, which is SVG-space Y) ── */}
+      <Line points={[[hx, y, -hh], [hx, y, +hh]]} color={color} lineWidth={1.5} />
+      {/* end ticks */}
+      <Line points={[[hx - TICK, y, -hh], [hx + TICK, y, -hh]]} color={color} lineWidth={1.5} />
+      <Line points={[[hx - TICK, y, +hh], [hx + TICK, y, +hh]]} color={color} lineWidth={1.5} />
+      {/* leader lines */}
+      <Line points={[[centerX - hw - 0.5, y, -hh], [hx + TICK, y, -hh]]} color={color} lineWidth={0.6} />
+      <Line points={[[centerX - hw - 0.5, y, +hh], [hx + TICK, y, +hh]]} color={color} lineWidth={0.6} />
+      {/* label — rotated 90° in screen space */}
+      <Html position={[hx - 7, y, 0]} center>
+        <div style={{ ...labelStyle, transform: "rotate(-90deg)" }}>
+          {heightMm.toFixed(2)} mm
+        </div>
+      </Html>
+    </>
+  );
+}
+
 // ─── Info tooltip ─────────────────────────────────────────────────────────
 
 function InfoTooltip({ text }: { text: string }) {
@@ -336,6 +423,7 @@ export default function Studio() {
   const [isDragging, setIsDragging] = useState(false);
   const [settings, setSettings] = useState<FidgetSettings>(DEFAULT_SETTINGS);
   const [fitCheckMode, setFitCheckMode] = useState(false);
+  const [showDimensions, setShowDimensions] = useState(true);
   const [recenterKey, setRecenterKey] = useState(0);
   // Draft value for the size input — lets the user finish typing before
   // the 3D scene recalculates.  Committed on blur or Enter.
@@ -353,9 +441,10 @@ export default function Studio() {
   // grid always sits flush under the models regardless of targetSizeMm.
   const sceneMetrics = useMemo(() => {
     if (!svgState) {
-      // Placeholder box depth is 22 mm; after +90° scene rotation its back face
+      // Placeholder box depth is 22 mm; after -90° scene rotation its back face
       // is at world Y = -(22/2) = -11. Put the grid just there.
-      return { gridY: -11, gridSize: 300, cellSize: 5, sectionSize: 25, fadeDistance: 200 };
+      return { gridY: -11, gridSize: 300, cellSize: 5, sectionSize: 25, fadeDistance: 200,
+               modelW: 0, modelH: 0, separationX: 35 };
     }
     const svgBase = settings.lockDimension === "width" ? svgState.width : svgState.height;
     const scale   = svgBase > 0 ? settings.targetSizeMm / svgBase : 1;
@@ -374,7 +463,12 @@ export default function Studio() {
     const gridSize    = Math.max(300, targetSize * 8);
     const fadeDistance = Math.max(200, targetSize * 5);
 
-    return { gridY, gridSize, cellSize, sectionSize, fadeDistance };
+    const modelHalfW  = (svgState.width  * scale) / 2;
+    const separationX = Math.max(35, modelHalfW + 12);
+    const modelW      = svgState.width  * scale;
+    const modelH      = svgState.height * scale;
+
+    return { gridY, gridSize, cellSize, sectionSize, fadeDistance, modelW, modelH, separationX };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [svgState, settings.lockDimension, settings.targetSizeMm]);
 
@@ -990,7 +1084,7 @@ export default function Studio() {
             </div>
           )}
 
-          {/* ── Fit-check toggle + Re-center ── */}
+          {/* ── Fit-check toggle + Re-center + Dimensions ── */}
           {svgState && (
             <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
               <button
@@ -1000,6 +1094,19 @@ export default function Studio() {
               >
                 <Crosshair className="h-3.5 w-3.5" />
                 Re-center
+              </button>
+              {/* Dimensions toggle */}
+              <button
+                onClick={() => setShowDimensions((v) => !v)}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium border transition-colors ${
+                  showDimensions
+                    ? "bg-amber-600/80 border-amber-500 text-white shadow-lg"
+                    : "bg-background/80 border-border text-muted-foreground hover:text-foreground backdrop-blur-sm"
+                }`}
+                title="Toggle dimension callouts"
+              >
+                <Ruler className="h-3.5 w-3.5" />
+                Dimensions
               </button>
               <button
                 onClick={() => setFitCheckMode((v) => !v)}
@@ -1090,6 +1197,26 @@ export default function Studio() {
                 totalDepth={settings.totalDepth}
                 recenterKey={recenterKey}
               />
+            )}
+
+            {/* Dimension annotations — world-space, outside the rotation group */}
+            {svgState && showDimensions && !fitCheckMode && sceneMetrics.modelW > 0 && (
+              <>
+                <ModelDimensionAnnotation
+                  centerX={-sceneMetrics.separationX}
+                  widthMm={sceneMetrics.modelW}
+                  heightMm={sceneMetrics.modelH}
+                  color="#8b8fff"
+                  lineY={sceneMetrics.gridY}
+                />
+                <ModelDimensionAnnotation
+                  centerX={sceneMetrics.separationX}
+                  widthMm={sceneMetrics.modelW}
+                  heightMm={sceneMetrics.modelH}
+                  color="#34d399"
+                  lineY={sceneMetrics.gridY}
+                />
+              </>
             )}
 
             <OrbitControls makeDefault enablePan enableZoom enableRotate />
