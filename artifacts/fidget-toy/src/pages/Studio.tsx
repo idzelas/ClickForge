@@ -17,6 +17,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { parseSVGContent, extractSvgColor } from "@/lib/svgParser";
+import RasterToSvgModal from "@/components/RasterToSvgModal";
 import {
   createOuterShellGeometries,
   createInnerClickerGeometries,
@@ -854,6 +855,7 @@ export default function Studio() {
   const queryClient = useQueryClient();
 
   const [svgState, setSvgState] = useState<ParsedSVGState | null>(null);
+  const [rasterFile, setRasterFile] = useState<File | null>(null);
   const [projectName, setProjectName] = useState("My Fidget Toy");
   const [projectId, setProjectId] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -968,26 +970,45 @@ export default function Studio() {
     [toast]
   );
 
+  const RASTER_TYPES = ["image/png", "image/jpeg", "image/webp"];
+
+  const dispatchFile = (file: File) => {
+    if (file.name.toLowerCase().endsWith(".svg") || file.type === "image/svg+xml") {
+      const reader = new FileReader();
+      reader.onload = (ev) => handleSVGLoad(ev.target?.result as string, file.name);
+      reader.readAsText(file);
+    } else if (RASTER_TYPES.includes(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name)) {
+      setRasterFile(file);
+    } else {
+      toast({ title: "Unsupported file type", description: "Please upload an SVG, PNG, JPG, or WebP.", variant: "destructive" });
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => handleSVGLoad(ev.target?.result as string, file.name);
-    reader.readAsText(file);
+    // Reset so the same file can be re-selected
+    e.target.value = "";
+    dispatchFile(file);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file?.name.endsWith(".svg")) {
-      const reader = new FileReader();
-      reader.onload = (ev) => handleSVGLoad(ev.target?.result as string, file.name);
-      reader.readAsText(file);
-    } else {
-      toast({ title: "Please drop an SVG file", variant: "destructive" });
-    }
+    if (file) dispatchFile(file);
   };
+
+  /** Called by RasterToSvgModal when user clicks "Use as clicker shape" */
+  const handleRasterApply = useCallback(
+    (svgString: string, fileName: string) => {
+      setRasterFile(null);
+      handleSVGLoad(svgString, fileName);
+      // Auto-enable clicker-shape mode since image → SVG is always clicker-shape intent
+      setSettings((s) => ({ ...s, svgIsClickerShape: true }));
+    },
+    [handleSVGLoad]
+  );
 
   const [mergeForExport, setMergeForExport] = useState(false);
 
@@ -1105,7 +1126,7 @@ export default function Studio() {
             {/* Upload zone */}
             <div>
               <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
-                Upload SVG
+                Upload Image
               </h2>
 
               {svgState ? (
@@ -1130,7 +1151,7 @@ export default function Studio() {
                     className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border hover:border-primary hover:bg-accent/50 text-xs text-muted-foreground hover:text-foreground transition-colors py-2 cursor-pointer"
                   >
                     <Upload className="h-3.5 w-3.5" />
-                    Upload new SVG
+                    Replace image
                   </button>
 
                   {/* Shape role toggle */}
@@ -1163,14 +1184,15 @@ export default function Studio() {
                   onDrop={handleDrop}
                 >
                   <Upload className="h-5 w-5 mx-auto text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">Drop SVG or click to browse</p>
+                  <p className="text-sm text-muted-foreground">Drop SVG or image here</p>
+                  <p className="text-[10px] text-muted-foreground/70 mt-1">SVG · PNG · JPG · WebP</p>
                 </div>
               )}
 
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".svg"
+                accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
                 className="hidden"
                 onChange={handleFileChange}
               />
@@ -1889,6 +1911,15 @@ export default function Studio() {
 
         </main>
       </div>
+
+      {/* Raster → SVG conversion modal */}
+      {rasterFile && (
+        <RasterToSvgModal
+          file={rasterFile}
+          onClose={() => setRasterFile(null)}
+          onApply={handleRasterApply}
+        />
+      )}
     </div>
   );
 }
