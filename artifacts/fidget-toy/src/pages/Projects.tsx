@@ -61,6 +61,13 @@ export default function Projects() {
           </Link>
           <img src="/logo.svg" alt="ClickForge" className="h-6 w-6" />
           <span className="font-bold text-base">My Projects</span>
+          <nav className="ml-4 flex items-center gap-1">
+            <Link href="/library">
+              <Button variant="ghost" size="sm" data-testid="link-library">
+                Library
+              </Button>
+            </Link>
+          </nav>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">{user?.emailAddresses[0]?.emailAddress}</span>

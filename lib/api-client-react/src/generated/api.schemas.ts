@@ -78,6 +78,29 @@ export interface UpdateUserPreferencesBody {
   sidebarMode: UpdateUserPreferencesBodySidebarMode;
 }
 
+export interface SvgDesign {
+  id: number;
+  userId: string;
+  name: string;
+  /** Raw SVG content */
+  svgData: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSvgDesignBody {
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  name: string;
+  /**
+   * @minLength 1
+   * @maxLength 1048576
+   */
+  svgData: string;
+}
+
 export interface ProjectStats {
   totalProjects: number;
   totalExports: number;

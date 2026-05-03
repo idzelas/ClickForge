@@ -9,6 +9,7 @@ import { Toaster } from "@/components/ui/toaster";
 import Home from "@/pages/Home";
 import Studio from "@/pages/Studio";
 import Projects from "@/pages/Projects";
+import Library from "@/pages/Library";
 import NotFound from "@/pages/not-found";
 
 const clerkPubKey = publishableKeyFromHost(
@@ -175,6 +176,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/studio" component={PublicStudio} />
           <Route path="/studio/:id" component={() => <ProtectedRoute component={Studio} />} />
           <Route path="/projects" component={() => <ProtectedRoute component={Projects} />} />
+          <Route path="/library" component={() => <ProtectedRoute component={Library} />} />
           <Route component={NotFound} />
         </Switch>
         <Toaster />

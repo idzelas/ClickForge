@@ -14,6 +14,8 @@ tags:
     description: Fidget toy project operations
   - name: user
     description: User profile & preferences
+  - name: svg-designs
+    description: Saved SVG design library
 paths:
   /healthz:
     get:
@@ -143,6 +145,67 @@ paths:
       operationId: deleteProject
       tags: [projects]
       summary: Delete a project
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: Unauthorized
+        "404":
+          description: Not found
+
+  /svg-designs:
+    get:
+      operationId: listSvgDesigns
+      tags: [svg-designs]
+      summary: List the user's saved SVG designs
+      security:
+        - clerkAuth: []
+      responses:
+        "200":
+          description: List of SVG designs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SvgDesign"
+        "401":
+          description: Unauthorized
+    post:
+      operationId: createSvgDesign
+      tags: [svg-designs]
+      summary: Save a new SVG design to the library
+      security:
+        - clerkAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSvgDesignBody"
+      responses:
+        "201":
+          description: SVG design created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SvgDesign"
+        "401":
+          description: Unauthorized
+
+  /svg-designs/{id}:
+    delete:
+      operationId: deleteSvgDesign
+      tags: [svg-designs]
+      summary: Delete a saved SVG design
       security:
         - clerkAuth: []
       parameters:
@@ -315,6 +378,47 @@ components:
           enum: [simple, advanced]
       required:
         - sidebarMode
+
+    SvgDesign:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: string
+        name:
+          type: string
+        svgData:
+          type: string
+          description: Raw SVG content
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - name
+        - svgData
+        - createdAt
+        - updatedAt
+
+    CreateSvgDesignBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        svgData:
+          type: string
+          minLength: 1
+          maxLength: 1048576
+      required:
+        - name
+        - svgData
 
     ProjectStats:
       type: object

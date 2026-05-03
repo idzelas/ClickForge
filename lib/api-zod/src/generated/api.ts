@@ -145,6 +145,38 @@ export const DeleteProjectParams = zod.object({
 });
 
 /**
+ * @summary List the user's saved SVG designs
+ */
+export const ListSvgDesignsResponseItem = zod.object({
+  id: zod.number(),
+  userId: zod.string(),
+  name: zod.string(),
+  svgData: zod.string().describe("Raw SVG content"),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListSvgDesignsResponse = zod.array(ListSvgDesignsResponseItem);
+
+/**
+ * @summary Save a new SVG design to the library
+ */
+export const createSvgDesignBodyNameMax = 100;
+
+export const createSvgDesignBodySvgDataMax = 1048576;
+
+export const CreateSvgDesignBody = zod.object({
+  name: zod.string().min(1).max(createSvgDesignBodyNameMax),
+  svgData: zod.string().min(1).max(createSvgDesignBodySvgDataMax),
+});
+
+/**
+ * @summary Delete a saved SVG design
+ */
+export const DeleteSvgDesignParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
  * @summary Get the signed-in user's UI preferences
  */
 export const GetUserPreferencesResponse = zod.object({

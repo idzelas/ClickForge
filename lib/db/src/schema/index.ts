@@ -19,3 +19,4 @@
 
 export * from "./projects";
 export * from "./userPreferences";
+export * from "./svgDesigns";

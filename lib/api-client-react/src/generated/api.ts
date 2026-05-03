@@ -18,9 +18,11 @@ import type {
 
 import type {
   CreateProjectBody,
+  CreateSvgDesignBody,
   HealthStatus,
   Project,
   ProjectStats,
+  SvgDesign,
   UpdateProjectBody,
   UpdateUserPreferencesBody,
   UserPreferences,
@@ -603,6 +605,251 @@ export const useDeleteProject = <
   TContext
 > => {
   return useMutation(getDeleteProjectMutationOptions(options));
+};
+
+/**
+ * @summary List the user's saved SVG designs
+ */
+export const getListSvgDesignsUrl = () => {
+  return `/api/svg-designs`;
+};
+
+export const listSvgDesigns = async (
+  options?: RequestInit,
+): Promise<SvgDesign[]> => {
+  return customFetch<SvgDesign[]>(getListSvgDesignsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListSvgDesignsQueryKey = () => {
+  return [`/api/svg-designs`] as const;
+};
+
+export const getListSvgDesignsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSvgDesigns>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listSvgDesigns>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSvgDesignsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listSvgDesigns>>> = ({
+    signal,
+  }) => listSvgDesigns({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSvgDesigns>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListSvgDesignsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSvgDesigns>>
+>;
+export type ListSvgDesignsQueryError = ErrorType<void>;
+
+/**
+ * @summary List the user's saved SVG designs
+ */
+
+export function useListSvgDesigns<
+  TData = Awaited<ReturnType<typeof listSvgDesigns>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listSvgDesigns>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListSvgDesignsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Save a new SVG design to the library
+ */
+export const getCreateSvgDesignUrl = () => {
+  return `/api/svg-designs`;
+};
+
+export const createSvgDesign = async (
+  createSvgDesignBody: CreateSvgDesignBody,
+  options?: RequestInit,
+): Promise<SvgDesign> => {
+  return customFetch<SvgDesign>(getCreateSvgDesignUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createSvgDesignBody),
+  });
+};
+
+export const getCreateSvgDesignMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSvgDesign>>,
+    TError,
+    { data: BodyType<CreateSvgDesignBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSvgDesign>>,
+  TError,
+  { data: BodyType<CreateSvgDesignBody> },
+  TContext
+> => {
+  const mutationKey = ["createSvgDesign"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSvgDesign>>,
+    { data: BodyType<CreateSvgDesignBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createSvgDesign(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSvgDesignMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSvgDesign>>
+>;
+export type CreateSvgDesignMutationBody = BodyType<CreateSvgDesignBody>;
+export type CreateSvgDesignMutationError = ErrorType<void>;
+
+/**
+ * @summary Save a new SVG design to the library
+ */
+export const useCreateSvgDesign = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSvgDesign>>,
+    TError,
+    { data: BodyType<CreateSvgDesignBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createSvgDesign>>,
+  TError,
+  { data: BodyType<CreateSvgDesignBody> },
+  TContext
+> => {
+  return useMutation(getCreateSvgDesignMutationOptions(options));
+};
+
+/**
+ * @summary Delete a saved SVG design
+ */
+export const getDeleteSvgDesignUrl = (id: number) => {
+  return `/api/svg-designs/${id}`;
+};
+
+export const deleteSvgDesign = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteSvgDesignUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteSvgDesignMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSvgDesign>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSvgDesign>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteSvgDesign"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSvgDesign>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteSvgDesign(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSvgDesignMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSvgDesign>>
+>;
+
+export type DeleteSvgDesignMutationError = ErrorType<void>;
+
+/**
+ * @summary Delete a saved SVG design
+ */
+export const useDeleteSvgDesign = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSvgDesign>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSvgDesign>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteSvgDesignMutationOptions(options));
 };
 
 /**

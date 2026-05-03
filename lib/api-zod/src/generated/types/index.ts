@@ -7,10 +7,12 @@
  */
 
 export * from "./createProjectBody";
+export * from "./createSvgDesignBody";
 export * from "./fidgetSettingsBlob";
 export * from "./healthStatus";
 export * from "./project";
 export * from "./projectStats";
+export * from "./svgDesign";
 export * from "./updateProjectBody";
 export * from "./updateUserPreferencesBody";
 export * from "./updateUserPreferencesBodySidebarMode";

@@ -39,7 +39,8 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { parseSVGContent, parseSVGColorRegions, extractSvgColor } from "@/lib/svgParser";
-import RasterToSvgModal from "@/components/RasterToSvgModal";
+import LibraryPickerPanel from "@/components/LibraryPickerPanel";
+import { consumePendingLibrarySvg } from "@/lib/librarySession";
 import BananaMesh from "@/components/BananaMesh";
 import {
   createOuterShellGeometries,
@@ -1064,7 +1065,7 @@ export default function Studio() {
   const routeProjectId = params.id ? Number(params.id) : null;
 
   const [svgState, setSvgState] = useState<ParsedSVGState | null>(null);
-  const [rasterFile, setRasterFile] = useState<File | null>(null);
+  const [libraryPickerOpen, setLibraryPickerOpen] = useState(false);
   const [projectName, setProjectName] = useState("My Fidget Toy");
   const [projectId, setProjectId] = useState<number | null>(routeProjectId);
   const [isDragging, setIsDragging] = useState(false);
@@ -1389,8 +1390,10 @@ export default function Studio() {
       reader.onload = (ev) => handleSVGLoad(ev.target?.result as string, file.name);
       reader.readAsText(file);
     } else if (RASTER_TYPES.includes(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name)) {
-      // Image-to-SVG tracing is a Premium-only path.
-      requirePremium("raster_upload", () => setRasterFile(file));
+      toast({
+        title: "Convert images in the Library",
+        description: "Image-to-SVG conversion lives in the Library. Save a design there, then load it here.",
+      });
     } else {
       toast({ title: "Unsupported file type", description: "Please upload an SVG, PNG, JPG, or WebP.", variant: "destructive" });
     }
@@ -1411,16 +1414,26 @@ export default function Studio() {
     if (file) dispatchFile(file);
   };
 
-  /** Called by RasterToSvgModal when user clicks "Use as clicker shape" */
-  const handleRasterApply = useCallback(
-    (svgString: string, fileName: string) => {
-      setRasterFile(null);
-      handleSVGLoad(svgString, fileName);
-      // Auto-enable clicker-shape mode since image → SVG is always clicker-shape intent
-      setSettings((s) => ({ ...s, svgIsClickerShape: true }));
+  /** Called when the user picks an SVG from their saved library. */
+  const handleLibraryPick = useCallback(
+    (svgData: string, name: string) => {
+      handleSVGLoad(svgData, `${name}.svg`);
+      setProjectName(name);
     },
-    [handleSVGLoad]
+    [handleSVGLoad],
   );
+
+  // One-shot consume: if the Library page handed us an SVG, load it now.
+  const consumedLibraryRef = useRef(false);
+  useEffect(() => {
+    if (consumedLibraryRef.current || routeProjectId !== null) return;
+    const pending = consumePendingLibrarySvg();
+    if (pending) {
+      consumedLibraryRef.current = true;
+      handleSVGLoad(pending.svgData, `${pending.name}.svg`);
+      setProjectName(pending.name);
+    }
+  }, [handleSVGLoad, routeProjectId]);
 
   const [mergeForExport, setMergeForExport] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -1688,14 +1701,28 @@ export default function Studio() {
                       {svgState.width.toFixed(0)} × {svgState.height.toFixed(0)} px
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border hover:border-primary hover:bg-accent/50 text-xs text-muted-foreground hover:text-foreground transition-colors py-2 cursor-pointer"
-                  >
-                    <Upload className="h-3.5 w-3.5" />
-                    Replace image
-                  </button>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border hover:border-primary hover:bg-accent/50 text-xs text-muted-foreground hover:text-foreground transition-colors py-2 cursor-pointer"
+                      data-testid="button-replace-image"
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                      Replace
+                    </button>
+                    {!isGuest && (
+                      <button
+                        type="button"
+                        onClick={() => setLibraryPickerOpen(true)}
+                        className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border hover:border-primary hover:bg-accent/50 text-xs text-muted-foreground hover:text-foreground transition-colors py-2 cursor-pointer"
+                        data-testid="button-pick-library"
+                      >
+                        <LayoutList className="h-3.5 w-3.5" />
+                        Library
+                      </button>
+                    )}
+                  </div>
 
                   {/* Shape role toggle (advanced only) */}
                   {sidebarMode === "advanced" && (
@@ -1722,29 +1749,42 @@ export default function Studio() {
                 </div>
               ) : (
                 /* ── Empty drop zone ── */
-                <div
-                  className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors ${
-                    isDragging
-                      ? "border-primary bg-accent"
-                      : "border-border hover:border-primary hover:bg-accent/50"
-                  }`}
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={handleDrop}
-                >
-                  <Upload className="h-5 w-5 mx-auto text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">Drop SVG or image here</p>
-                  <p className="text-[10px] text-muted-foreground/70 mt-1 inline-flex items-center gap-1">
-                    SVG ·{" "}
-                    {isPremium ? (
-                      <span>PNG · JPG · WebP</span>
-                    ) : (
-                      <PremiumLabel className="text-[10px]" iconClassName="h-2.5 w-2.5">
-                        PNG · JPG · WebP
-                      </PremiumLabel>
-                    )}
-                  </p>
+                <div className="space-y-2">
+                  <div
+                    className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors ${
+                      isDragging
+                        ? "border-primary bg-accent"
+                        : "border-border hover:border-primary hover:bg-accent/50"
+                    }`}
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
+                  >
+                    <Upload className="h-5 w-5 mx-auto text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground">Drop SVG or image here</p>
+                    <p className="text-[10px] text-muted-foreground/70 mt-1 inline-flex items-center gap-1">
+                      SVG ·{" "}
+                      {isPremium ? (
+                        <span>PNG · JPG · WebP</span>
+                      ) : (
+                        <PremiumLabel className="text-[10px]" iconClassName="h-2.5 w-2.5">
+                          PNG · JPG · WebP
+                        </PremiumLabel>
+                      )}
+                    </p>
+                  </div>
+                  {!isGuest && (
+                    <button
+                      type="button"
+                      onClick={() => setLibraryPickerOpen(true)}
+                      className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-border hover:border-primary hover:bg-accent/50 text-xs text-muted-foreground hover:text-foreground transition-colors py-2 cursor-pointer"
+                      data-testid="button-pick-library-empty"
+                    >
+                      <LayoutList className="h-3.5 w-3.5" />
+                      Pick from Library
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -2815,14 +2855,12 @@ export default function Studio() {
         </main>
       </div>
 
-      {/* Raster → SVG conversion modal */}
-      {rasterFile && (
-        <RasterToSvgModal
-          file={rasterFile}
-          onClose={() => setRasterFile(null)}
-          onApply={handleRasterApply}
-        />
-      )}
+      {/* Pick-from-library modal */}
+      <LibraryPickerPanel
+        open={libraryPickerOpen}
+        onClose={() => setLibraryPickerOpen(false)}
+        onPick={handleLibraryPick}
+      />
 
       {/* STL color-loss warning — STL has no concept of color, so per-region
           slabs are dropped and only the merged shell + clicker bodies survive.

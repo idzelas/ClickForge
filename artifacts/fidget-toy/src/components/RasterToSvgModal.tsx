@@ -14,7 +14,13 @@ import ImageTracer from "imagetracerjs";
 interface Props {
   file: File;
   onClose: () => void;
-  onApply: (svgString: string, fileName: string) => void;
+  onApply?: (svgString: string, fileName: string) => void;
+  /** When provided, shows a "Save to Library" button in the pick footer. */
+  onSaveToLibrary?: (svgString: string, fileName: string) => void;
+  /** When true, renders inline (no overlay) instead of as a modal. */
+  inline?: boolean;
+  /** Custom label for the apply button (defaults to "Use as clicker shape"). */
+  applyLabel?: string;
 }
 
 interface TraceOptions {
@@ -288,7 +294,14 @@ function ZoomPane({
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function RasterToSvgModal({ file, onClose, onApply }: Props) {
+export default function RasterToSvgModal({
+  file,
+  onClose,
+  onApply,
+  onSaveToLibrary,
+  inline = false,
+  applyLabel = "Use as clicker shape",
+}: Props) {
   const [opts, setOpts] = useState<TraceOptions>(DEFAULT_OPTS);
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [svgOutput, setSvgOutput] = useState<string | null>(null);
@@ -396,12 +409,24 @@ export default function RasterToSvgModal({ file, onClose, onApply }: Props) {
     setPhase("pick");
   };
 
-  const applySelection = () => {
-    if (!svgMeta || selectedIds.size === 0) return;
+  const buildSelectedSvg = (): { svg: string; fileName: string } | null => {
+    if (!svgMeta || selectedIds.size === 0) return null;
     const selected = tracedPaths.filter((p) => selectedIds.has(p.id));
     const svg = buildSVGFromPaths(selected, svgMeta);
     const baseName = file.name.replace(/\.(png|jpe?g|webp)$/i, "");
-    onApply(svg, `${baseName}.svg`);
+    return { svg, fileName: `${baseName}.svg` };
+  };
+
+  const applySelection = () => {
+    const out = buildSelectedSvg();
+    if (!out || !onApply) return;
+    onApply(out.svg, out.fileName);
+  };
+
+  const saveSelectionToLibrary = () => {
+    const out = buildSelectedSvg();
+    if (!out || !onSaveToLibrary) return;
+    onSaveToLibrary(out.svg, out.fileName);
   };
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -442,18 +467,22 @@ export default function RasterToSvgModal({ file, onClose, onApply }: Props) {
     </div>
   );
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0,0,0,0.55)" }}
-    >
+  const inner = (
       <div
-        className="relative bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-        style={{
-          width: phase === "pick" ? "min(1100px, 96vw)" : "min(960px, 96vw)",
-          maxHeight: "92vh",
-          transition: "width 0.2s ease",
-        }}
+        className={
+          inline
+            ? "relative bg-card border border-border rounded-2xl shadow-sm flex flex-col overflow-hidden w-full"
+            : "relative bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        }
+        style={
+          inline
+            ? { height: "min(720px, 80vh)" }
+            : {
+                width: phase === "pick" ? "min(1100px, 96vw)" : "min(960px, 96vw)",
+                maxHeight: "92vh",
+                transition: "width 0.2s ease",
+              }
+        }
         onMouseMove={handleMouseMove}
         onMouseUp={stopPan}
         onMouseLeave={stopPan}
@@ -759,20 +788,43 @@ export default function RasterToSvgModal({ file, onClose, onApply }: Props) {
                   <ArrowLeft className="h-3.5 w-3.5" />
                   Back
                 </Button>
-                <Button
-                  size="sm"
-                  disabled={selectedIds.size === 0}
-                  onClick={applySelection}
-                  className="gap-1.5"
-                >
-                  Use as clicker shape
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
+                {onSaveToLibrary && (
+                  <Button
+                    variant={onApply ? "outline" : "default"}
+                    size="sm"
+                    disabled={selectedIds.size === 0}
+                    onClick={saveSelectionToLibrary}
+                    className="gap-1.5"
+                  >
+                    Save to Library
+                  </Button>
+                )}
+                {onApply && (
+                  <Button
+                    size="sm"
+                    disabled={selectedIds.size === 0}
+                    onClick={applySelection}
+                    className="gap-1.5"
+                  >
+                    {applyLabel}
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                )}
               </div>
             </>
           )}
         </div>
       </div>
+  );
+
+  if (inline) return inner;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0,0,0,0.55)" }}
+    >
+      {inner}
     </div>
   );
 }
