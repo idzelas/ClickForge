@@ -275,7 +275,7 @@ function AutoCamera({
   lockDimension: "width" | "height";
   totalDepth: number;
 }) {
-  const { camera } = useThree();
+  const { camera, controls } = useThree();
 
   useEffect(() => {
     const svgBase   = lockDimension === "width" ? svgWidth : svgHeight;
@@ -300,8 +300,18 @@ function AutoCamera({
     camera.position.set(0, (baseY / baseMag) * distance, (baseZ / baseMag) * distance);
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
+
+    // OrbitControls stores its own pivot `target` separately from camera.lookAt.
+    // Without resetting it here, the next frame OrbitControls calls
+    // camera.lookAt(oldTarget) and overrides our positioning, so the camera
+    // appears to drift off-center after the user has panned.
+    if (controls && "target" in controls) {
+      (controls as { target: THREE.Vector3; update: () => void }).target.set(0, 0, 0);
+      (controls as { target: THREE.Vector3; update: () => void }).update();
+    }
+  // controls must be in deps so the effect re-runs once OrbitControls mounts
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetSizeMm, svgWidth, svgHeight, lockDimension, totalDepth]);
+  }, [targetSizeMm, svgWidth, svgHeight, lockDimension, totalDepth, controls]);
 
   return null;
 }
