@@ -2,7 +2,7 @@ import { Router } from "express";
 import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
 import { projectsTable } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, count } from "drizzle-orm";
 import {
   CreateProjectBody,
   UpdateProjectBody,
@@ -10,6 +10,7 @@ import {
   UpdateProjectParams,
   DeleteProjectParams,
 } from "@workspace/api-zod";
+import { tierForSignedInUser, FREE_PROJECT_LIMIT } from "../lib/tier";
 
 const router = Router();
 
@@ -58,6 +59,19 @@ router.post("/projects", requireAuth, async (req: any, res: any) => {
     return res.status(400).json({ error: parsed.error });
   }
   try {
+    if (tierForSignedInUser() === "free") {
+      const [{ value: existing }] = await db
+        .select({ value: count() })
+        .from(projectsTable)
+        .where(eq(projectsTable.userId, req.userId));
+      if (existing >= FREE_PROJECT_LIMIT) {
+        return res.status(403).json({
+          error: `Free accounts can save up to ${FREE_PROJECT_LIMIT} projects. Upgrade to Premium for unlimited saves.`,
+          code: "PROJECT_LIMIT_REACHED",
+          limit: FREE_PROJECT_LIMIT,
+        });
+      }
+    }
     const { name, svgData, extrudeDepth = 4, keycapSize = 14, pegRadius = 3.5, settings } = parsed.data;
     const [project] = await db
       .insert(projectsTable)

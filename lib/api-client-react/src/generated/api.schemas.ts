@@ -54,6 +54,30 @@ export interface UpdateProjectBody {
   settings?: FidgetSettingsBlob;
 }
 
+export type UserPreferencesSidebarMode =
+  (typeof UserPreferencesSidebarMode)[keyof typeof UserPreferencesSidebarMode];
+
+export const UserPreferencesSidebarMode = {
+  simple: "simple",
+  advanced: "advanced",
+} as const;
+
+export interface UserPreferences {
+  sidebarMode: UserPreferencesSidebarMode;
+}
+
+export type UpdateUserPreferencesBodySidebarMode =
+  (typeof UpdateUserPreferencesBodySidebarMode)[keyof typeof UpdateUserPreferencesBodySidebarMode];
+
+export const UpdateUserPreferencesBodySidebarMode = {
+  simple: "simple",
+  advanced: "advanced",
+} as const;
+
+export interface UpdateUserPreferencesBody {
+  sidebarMode: UpdateUserPreferencesBodySidebarMode;
+}
+
 export interface ProjectStats {
   totalProjects: number;
   totalExports: number;

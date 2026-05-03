@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: projects
     description: Fidget toy project operations
+  - name: user
+    description: User profile & preferences
 paths:
   /healthz:
     get:
@@ -157,6 +159,44 @@ paths:
         "404":
           description: Not found
 
+  /user/preferences:
+    get:
+      operationId: getUserPreferences
+      tags: [user]
+      summary: Get the signed-in user's UI preferences
+      security:
+        - clerkAuth: []
+      responses:
+        "200":
+          description: Preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPreferences"
+        "401":
+          description: Unauthorized
+    put:
+      operationId: updateUserPreferences
+      tags: [user]
+      summary: Replace the signed-in user's UI preferences
+      security:
+        - clerkAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserPreferencesBody"
+      responses:
+        "200":
+          description: Updated preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPreferences"
+        "401":
+          description: Unauthorized
+
 components:
   securitySchemes:
     clerkAuth:
@@ -257,6 +297,24 @@ components:
         settings:
           $ref: "#/components/schemas/FidgetSettingsBlob"
           description: Full studio settings blob
+
+    UserPreferences:
+      type: object
+      properties:
+        sidebarMode:
+          type: string
+          enum: [simple, advanced]
+      required:
+        - sidebarMode
+
+    UpdateUserPreferencesBody:
+      type: object
+      properties:
+        sidebarMode:
+          type: string
+          enum: [simple, advanced]
+      required:
+        - sidebarMode
 
     ProjectStats:
       type: object

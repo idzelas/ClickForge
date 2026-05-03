@@ -45,18 +45,21 @@ export default function Home() {
             socket and connector peg. Export as STL or 3MF — ready for your printer.
           </p>
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link href="/sign-up">
-              <Button size="lg" className="text-base px-8" data-testid="button-cta-signup">
-                Start creating
+            <Link href="/studio">
+              <Button size="lg" className="text-base px-8" data-testid="button-cta-try">
+                Try it now — no sign-up
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
-            <Link href="/sign-in">
-              <Button size="lg" variant="outline" className="text-base px-8" data-testid="button-cta-signin">
-                Sign in
+            <Link href="/sign-up">
+              <Button size="lg" variant="outline" className="text-base px-8" data-testid="button-cta-signup">
+                Create an account
               </Button>
             </Link>
           </div>
+          <p className="mt-4 text-xs text-muted-foreground">
+            Free guests get one STL export. Sign in to save and unlock 3MF / OBJ.
+          </p>
         </section>
 
         {/* How it works */}

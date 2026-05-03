@@ -108,6 +108,15 @@ function HomeRedirect() {
   );
 }
 
+/**
+ * Studio is open to anonymous "try it now" guests. We render it
+ * unconditionally so the page does not flash a redirect while Clerk
+ * boots — gating for guest-only restrictions happens inside Studio.
+ */
+function PublicStudio() {
+  return <Studio />;
+}
+
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   return (
     <>
@@ -163,7 +172,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/" component={HomeRedirect} />
           <Route path="/sign-in/*?" component={SignInPage} />
           <Route path="/sign-up/*?" component={SignUpPage} />
-          <Route path="/studio" component={() => <ProtectedRoute component={Studio} />} />
+          <Route path="/studio" component={PublicStudio} />
           <Route path="/studio/:id" component={() => <ProtectedRoute component={Studio} />} />
           <Route path="/projects" component={() => <ProtectedRoute component={Projects} />} />
           <Route component={NotFound} />

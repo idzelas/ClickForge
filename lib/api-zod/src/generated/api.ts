@@ -143,3 +143,21 @@ export const UpdateProjectResponse = zod.object({
 export const DeleteProjectParams = zod.object({
   id: zod.coerce.number(),
 });
+
+/**
+ * @summary Get the signed-in user's UI preferences
+ */
+export const GetUserPreferencesResponse = zod.object({
+  sidebarMode: zod.enum(["simple", "advanced"]),
+});
+
+/**
+ * @summary Replace the signed-in user's UI preferences
+ */
+export const UpdateUserPreferencesBody = zod.object({
+  sidebarMode: zod.enum(["simple", "advanced"]),
+});
+
+export const UpdateUserPreferencesResponse = zod.object({
+  sidebarMode: zod.enum(["simple", "advanced"]),
+});

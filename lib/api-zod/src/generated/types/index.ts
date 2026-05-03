@@ -12,3 +12,7 @@ export * from "./healthStatus";
 export * from "./project";
 export * from "./projectStats";
 export * from "./updateProjectBody";
+export * from "./updateUserPreferencesBody";
+export * from "./updateUserPreferencesBodySidebarMode";
+export * from "./userPreferences";
+export * from "./userPreferencesSidebarMode";

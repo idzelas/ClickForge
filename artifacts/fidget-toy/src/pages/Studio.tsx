@@ -3,7 +3,23 @@ import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls, Grid, Html, Line } from "@react-three/drei";
 import * as THREE from "three";
 import { useLocation, useParams, Link } from "wouter";
-import { useUser, useClerk } from "@clerk/react";
+import { useUser, useClerk, SignInButton } from "@clerk/react";
+import { useTier, FREE_PROJECT_LIMIT, type GatedFeature } from "@/lib/tier";
+import {
+  loadDraft,
+  saveDraft,
+  clearDraft,
+  getAnonStlExportCount,
+  incrementAnonStlExportCount,
+  loadSidebarMode,
+  saveSidebarMode,
+  setPromotePending,
+  getPromotePending,
+  type SidebarMode,
+} from "@/lib/draft";
+import { PremiumLabel } from "@/components/PremiumLabel";
+import { UpgradeModal } from "@/components/UpgradeModal";
+import { AuthRequiredModal } from "@/components/AuthRequiredModal";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
@@ -15,6 +31,10 @@ import {
   useUpdateProject,
   useGetProject,
   getListProjectsQueryKey,
+  useGetUserPreferences,
+  useUpdateUserPreferences,
+  getGetUserPreferencesQueryKey,
+  ApiError,
   type FidgetSettingsBlob,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -62,6 +82,9 @@ import {
   RotateCcw,
   ChevronDown,
   Settings2,
+  Crown,
+  EyeOff,
+  LogIn,
 } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
@@ -1040,6 +1063,63 @@ export default function Studio() {
   const [showDimensions, setShowDimensions] = useState(true);
   const [recenterKey, setRecenterKey] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>("solid");
+
+  // ── Free / Premium tier ──────────────────────────────────────────────
+  const tier = useTier();
+  const isPremium = tier === "premium";
+  const isGuest = tier === "guest";
+  const [upgradeFeature, setUpgradeFeature] = useState<GatedFeature | null>(null);
+  const [authAction, setAuthAction] = useState<string | null>(null);
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>(() => loadSidebarMode("simple"));
+  // Local fallback so guests still get persistence via localStorage.
+  useEffect(() => { saveSidebarMode(sidebarMode); }, [sidebarMode]);
+
+  // For signed-in users, mirror the choice on the server so it follows
+  // them across browsers and devices.
+  const userPrefs = useGetUserPreferences({
+    query: { enabled: !isGuest, queryKey: ["/api/user/preferences"] },
+  });
+  const updatePrefs = useUpdateUserPreferences();
+  const prefsHydratedRef = useRef(false);
+  useEffect(() => {
+    if (isGuest || prefsHydratedRef.current || !userPrefs.data) return;
+    prefsHydratedRef.current = true;
+    const remote = userPrefs.data.sidebarMode === "advanced" ? "advanced" : "simple";
+    if (remote !== sidebarMode) setSidebarMode(remote);
+  }, [isGuest, userPrefs.data, sidebarMode]);
+  useEffect(() => {
+    if (isGuest || !prefsHydratedRef.current) return;
+    if (userPrefs.data?.sidebarMode === sidebarMode) return;
+    void updatePrefs
+      .mutateAsync({ data: { sidebarMode } })
+      .then(() =>
+        queryClient.invalidateQueries({ queryKey: getGetUserPreferencesQueryKey() }),
+      )
+      .catch(() => { /* best effort; localStorage already kept it locally */ });
+  }, [isGuest, sidebarMode, userPrefs.data, updatePrefs, queryClient]);
+
+  /** Show the upgrade modal for a Premium-only feature. */
+  const requirePremium = useCallback(
+    (feature: GatedFeature, action?: () => void) => {
+      if (isPremium) { action?.(); return; }
+      if (isGuest) {
+        // Guests get a sign-in prompt first; the upgrade pitch lives behind it.
+        setAuthAction(`use ${feature.replace(/_/g, " ")}`);
+        return;
+      }
+      setUpgradeFeature(feature);
+    },
+    [isPremium, isGuest],
+  );
+
+  /** Require a signed-in user (any tier). Opens the auth modal otherwise. */
+  const requireSignedIn = useCallback(
+    (action: string, fn: () => void) => {
+      if (!isGuest) { fn(); return; }
+      setAuthAction(action);
+    },
+    [isGuest],
+  );
   const shellLabelRef   = useRef<HTMLDivElement>(null);
   const clickerLabelRef = useRef<HTMLDivElement>(null);
   const [sliderHighlight, setSliderHighlight] = useState<MeshKey[]>([]);
@@ -1157,6 +1237,59 @@ export default function Studio() {
 
   const [hydratedForId, setHydratedForId] = useState<number | null>(null);
 
+  // ── Anonymous draft persistence ─────────────────────────────────────
+  // Restore a guest's previous /studio session if any (only when there is
+  // no route project ID and no in-memory svg yet).
+  const [draftHydrated, setDraftHydrated] = useState(false);
+  useEffect(() => {
+    if (draftHydrated || routeProjectId !== null) return;
+    if (!isGuest) { setDraftHydrated(true); return; }
+    const draft = loadDraft();
+    if (draft) {
+      try {
+        const parsed = parseSVGContent(draft.svgData);
+        setSvgState({
+          shapes: parsed.shapes,
+          width: parsed.width,
+          height: parsed.height,
+          rawSvg: draft.svgData,
+          fileName: `${draft.name}.svg`,
+        });
+        setProjectName(draft.name);
+        setSettings({ ...DEFAULT_SETTINGS, ...(draft.settings as Partial<FidgetSettings>) });
+        setDraftSizeMm(String(
+          (draft.settings as Partial<FidgetSettings>).targetSizeMm ?? DEFAULT_SETTINGS.targetSizeMm,
+        ));
+      } catch { /* ignore broken draft */ }
+    }
+    setDraftHydrated(true);
+  }, [draftHydrated, isGuest, routeProjectId]);
+
+  // Persist any guest changes to localStorage so a refresh keeps the work.
+  useEffect(() => {
+    if (!isGuest || !svgState) return;
+    saveDraft({
+      name: projectName,
+      svgData: svgState.rawSvg,
+      settings: settings as unknown as Record<string, unknown>,
+      updatedAt: Date.now(),
+    });
+    setPromotePending(true);
+  }, [isGuest, svgState, projectName, settings]);
+
+  // After sign-in: if the user has a pending guest draft and is on the
+  // empty /studio route, prompt them with a Yes/No to save it as a real
+  // project. Yes → create project; No → clear the local draft.
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  const promoteOfferedRef = useRef(false);
+  useEffect(() => {
+    if (isGuest || routeProjectId !== null || projectId !== null) return;
+    if (promoteOfferedRef.current) return;
+    if (!svgState || !getPromotePending()) return;
+    promoteOfferedRef.current = true;
+    setPromoteOpen(true);
+  }, [isGuest, routeProjectId, projectId, svgState]);
+
   useEffect(() => {
     if (!loadedProject.data || hydratedForId === routeProjectId) return;
     const p = loadedProject.data;
@@ -1246,7 +1379,8 @@ export default function Studio() {
       reader.onload = (ev) => handleSVGLoad(ev.target?.result as string, file.name);
       reader.readAsText(file);
     } else if (RASTER_TYPES.includes(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name)) {
-      setRasterFile(file);
+      // Image-to-SVG tracing is a Premium-only path.
+      requirePremium("raster_upload", () => setRasterFile(file));
     } else {
       toast({ title: "Unsupported file type", description: "Please upload an SVG, PNG, JPG, or WebP.", variant: "destructive" });
     }
@@ -1326,9 +1460,15 @@ export default function Studio() {
       exportSTL(groups);
       toast({ title: "STL exported" });
     }
+    if (isGuest) incrementAnonStlExportCount();
   };
 
   const handleExportSTL = async () => {
+    // Anonymous "try it now" guests get exactly one free STL export.
+    if (isGuest && getAnonStlExportCount() >= 1) {
+      setAuthAction("export more than one STL file");
+      return;
+    }
     // If the SVG carries color regions, warn that STL will drop the color
     // information before exporting.  Confirming proceeds; cancelling aborts.
     if (colorRegions.length > 0) {
@@ -1339,34 +1479,38 @@ export default function Studio() {
   };
 
   const handleExport3MF = async () => {
-    const groups = getMeshGroups();
-    if (!groups.shell.length && !groups.clicker.length) {
-      toast({ title: "Upload an SVG first", variant: "destructive" });
-      return;
-    }
-    await export3MF(groups);
-    toast({
-      title: mergeForExport
-        ? "3MF exported — per-part objects with color"
-        : "3MF exported",
+    requirePremium("export_3mf", async () => {
+      const groups = getMeshGroups();
+      if (!groups.shell.length && !groups.clicker.length) {
+        toast({ title: "Upload an SVG first", variant: "destructive" });
+        return;
+      }
+      await export3MF(groups);
+      toast({
+        title: mergeForExport
+          ? "3MF exported — per-part objects with color"
+          : "3MF exported",
+      });
     });
   };
 
   const handleExportOBJ = async () => {
-    const groups = getMeshGroups();
-    if (!groups.shell.length && !groups.clicker.length) {
-      toast({ title: "Upload an SVG first", variant: "destructive" });
-      return;
-    }
-    exportOBJ(groups);
-    toast({
-      title: mergeForExport
-        ? "OBJ exported — per-part objects with color"
-        : "OBJ exported",
+    requirePremium("export_obj", () => {
+      const groups = getMeshGroups();
+      if (!groups.shell.length && !groups.clicker.length) {
+        toast({ title: "Upload an SVG first", variant: "destructive" });
+        return;
+      }
+      exportOBJ(groups);
+      toast({
+        title: mergeForExport
+          ? "OBJ exported — per-part objects with color"
+          : "OBJ exported",
+      });
     });
   };
 
-  const handleSave = async () => {
+  const performSave = useCallback(async () => {
     if (!svgState) {
       toast({ title: "Upload an SVG first", variant: "destructive" });
       return;
@@ -1386,11 +1530,27 @@ export default function Studio() {
         const project = await createProject.mutateAsync({ data: payload });
         setProjectId(project.id);
         queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+        clearDraft();
         toast({ title: "Project created", description: project.name });
       }
-    } catch {
+    } catch (err) {
+      // Server enforces the Free-tier 3-project save limit. Map that into
+      // the Premium upgrade modal so the call to action is consistent.
+      if (
+        err instanceof ApiError &&
+        typeof err.data === "object" &&
+        err.data !== null &&
+        (err.data as { code?: string }).code === "PROJECT_LIMIT_REACHED"
+      ) {
+        setUpgradeFeature("save_over_limit");
+        return;
+      }
       toast({ title: "Failed to save project", variant: "destructive" });
     }
+  }, [svgState, projectName, settings, projectId, updateProject, createProject, queryClient, toast]);
+
+  const handleSave = () => {
+    requireSignedIn("save your project", () => { void performSave(); });
   };
 
   const setSetting = <K extends keyof FidgetSettings>(key: K, value: FidgetSettings[K]) =>
@@ -1418,16 +1578,50 @@ export default function Studio() {
           {projectId && <Badge variant="secondary">Saved</Badge>}
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/projects">
-            <Button variant="ghost" size="sm">
-              <LayoutList className="h-4 w-4 mr-1" />
-              My Projects
+          {/* Tier badge */}
+          {tier === "premium" && (
+            <Badge className="bg-amber-500 hover:bg-amber-500 text-white gap-1">
+              <Crown className="h-3 w-3" /> Premium
+            </Badge>
+          )}
+          {tier === "free" && (
+            <>
+              <Badge variant="secondary">Free</Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-amber-500 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
+                onClick={() => setUpgradeFeature("save_over_limit")}
+              >
+                <Crown className="h-3.5 w-3.5 mr-1" /> Upgrade
+              </Button>
+            </>
+          )}
+          {tier === "guest" && (
+            <Badge variant="outline" className="text-muted-foreground">Guest</Badge>
+          )}
+
+          {!isGuest && (
+            <Link href="/projects">
+              <Button variant="ghost" size="sm">
+                <LayoutList className="h-4 w-4 mr-1" />
+                My Projects
+              </Button>
+            </Link>
+          )}
+          {isGuest ? (
+            <SignInButton mode="modal">
+              <Button size="sm">
+                <LogIn className="h-4 w-4 mr-1" />
+                Sign in
+              </Button>
+            </SignInButton>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => signOut(() => setLocation("/"))}>
+              <LogOut className="h-4 w-4 mr-1" />
+              {user?.firstName ?? "Sign out"}
             </Button>
-          </Link>
-          <Button variant="ghost" size="sm" onClick={() => signOut(() => setLocation("/"))}>
-            <LogOut className="h-4 w-4 mr-1" />
-            {user?.firstName ?? "Sign out"}
-          </Button>
+          )}
         </div>
       </header>
 
@@ -1435,6 +1629,32 @@ export default function Studio() {
         {/* ── Left sidebar ── */}
         <aside className="w-72 border-r border-border bg-card flex flex-col shrink-0 overflow-y-auto">
           <div className="p-4 space-y-6">
+
+            {/* ── Simple / Advanced mode toggle ── */}
+            <div className="flex rounded-md border border-border bg-accent/30 p-0.5 text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => setSidebarMode("simple")}
+                className={`flex-1 rounded px-2 py-1 transition-colors ${
+                  sidebarMode === "simple"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Simple
+              </button>
+              <button
+                type="button"
+                onClick={() => setSidebarMode("advanced")}
+                className={`flex-1 rounded px-2 py-1 transition-colors ${
+                  sidebarMode === "advanced"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Advanced
+              </button>
+            </div>
 
             {/* Upload zone */}
             <div>
@@ -1467,7 +1687,8 @@ export default function Studio() {
                     Replace image
                   </button>
 
-                  {/* Shape role toggle */}
+                  {/* Shape role toggle (advanced only) */}
+                  {sidebarMode === "advanced" && (
                   <label className="flex items-start gap-2.5 rounded-lg border border-border bg-accent/20 px-3 py-2.5 cursor-pointer hover:bg-accent/40 transition-colors">
                     <input
                       type="checkbox"
@@ -1487,6 +1708,7 @@ export default function Studio() {
                       defaultLabel={DEFAULT_SETTINGS.svgIsClickerShape ? "on" : "off"}
                     />
                   </label>
+                  )}
                 </div>
               ) : (
                 /* ── Empty drop zone ── */
@@ -1503,7 +1725,16 @@ export default function Studio() {
                 >
                   <Upload className="h-5 w-5 mx-auto text-muted-foreground mb-2" />
                   <p className="text-sm text-muted-foreground">Drop SVG or image here</p>
-                  <p className="text-[10px] text-muted-foreground/70 mt-1">SVG · PNG · JPG · WebP</p>
+                  <p className="text-[10px] text-muted-foreground/70 mt-1 inline-flex items-center gap-1">
+                    SVG ·{" "}
+                    {isPremium ? (
+                      <span>PNG · JPG · WebP</span>
+                    ) : (
+                      <PremiumLabel className="text-[10px]" iconClassName="h-2.5 w-2.5">
+                        PNG · JPG · WebP
+                      </PremiumLabel>
+                    )}
+                  </p>
                 </div>
               )}
 
@@ -1560,8 +1791,8 @@ export default function Studio() {
               </div>
             </div>
 
-            {/* Geometry warnings */}
-            {geoWarnings.length > 0 && (
+            {/* Geometry warnings (advanced only — they reference advanced controls) */}
+            {sidebarMode === "advanced" && geoWarnings.length > 0 && (
               <div className="space-y-2">
                 {geoWarnings.map((w, i) => (
                   <div
@@ -1579,7 +1810,36 @@ export default function Studio() {
               </div>
             )}
 
-            {/* Settings header + reset */}
+            {/* In Simple mode, expose only the preview color of the model. */}
+            {sidebarMode === "simple" && (
+              <div>
+                <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+                  Preview color
+                </h2>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Model color</span>
+                  <input
+                    type="color"
+                    value={settings.shellColor ?? DEFAULT_SETTINGS.shellColor}
+                    onChange={(e) => {
+                      // Keep both parts visually in-sync in Simple mode.
+                      setSettings((s) => ({
+                        ...s,
+                        shellColor: e.target.value,
+                        clickerColor: e.target.value,
+                      }));
+                    }}
+                    className="h-8 w-14 rounded border border-input cursor-pointer bg-transparent p-0.5"
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground/70 mt-2 leading-relaxed">
+                  Switch to <button type="button" className="underline hover:text-foreground" onClick={() => setSidebarMode("advanced")}>Advanced</button> to save your project, export STL/3MF/OBJ, and tweak shell depth, key ring, fit clearance, and per-region colors.
+                </p>
+              </div>
+            )}
+
+            {/* Settings header + reset (advanced only) */}
+            {sidebarMode === "advanced" && (
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Settings</span>
               <button
@@ -1600,8 +1860,10 @@ export default function Studio() {
                 Reset
               </button>
             </div>
+            )}
 
             {/* ── Outer Shell (basics) ── */}
+            {sidebarMode === "advanced" && (
             <div>
               <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
                 Outer Shell
@@ -1616,14 +1878,24 @@ export default function Studio() {
                     className="h-8 w-14 rounded border border-input cursor-pointer bg-transparent p-0.5"
                   />
                 </div>
-                <label className="flex items-center gap-2 cursor-pointer select-none">
+                <label className="flex items-center gap-2 cursor-pointer select-none"
+                  onClick={(e) => {
+                    if (!isPremium) {
+                      e.preventDefault();
+                      requirePremium("mirror_shell");
+                    }
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={settings.mirrorShell ?? false}
-                    onChange={(e) => setSetting("mirrorShell", e.target.checked)}
+                    onChange={(e) => isPremium && setSetting("mirrorShell", e.target.checked)}
+                    disabled={!isPremium}
                     className="h-4 w-4 rounded accent-primary"
                   />
-                  <span className="text-sm">Mirror left-right</span>
+                  <span className="text-sm">
+                    {isPremium ? "Mirror left-right" : <PremiumLabel>Mirror left-right</PremiumLabel>}
+                  </span>
                   <ResetButton
                     isDefault={(settings.mirrorShell ?? false) === DEFAULT_SETTINGS.mirrorShell}
                     onReset={() => setSetting("mirrorShell", DEFAULT_SETTINGS.mirrorShell)}
@@ -1686,21 +1958,33 @@ export default function Studio() {
                 />
               </div>
             </div>
+            )}
 
             {/* ── Key Ring (outer shell only) ── */}
+            {sidebarMode === "advanced" && (
             <div>
               <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
                 Key Ring
               </h2>
               <div className="space-y-5">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
+                <label className="flex items-center gap-2 cursor-pointer select-none"
+                  onClick={(e) => {
+                    if (!isPremium) {
+                      e.preventDefault();
+                      requirePremium("key_ring");
+                    }
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={settings.keyRingEnabled ?? false}
-                    onChange={(e) => setSetting("keyRingEnabled", e.target.checked)}
+                    onChange={(e) => isPremium && setSetting("keyRingEnabled", e.target.checked)}
+                    disabled={!isPremium}
                     className="h-4 w-4 rounded accent-primary"
                   />
-                  <span className="text-sm">Add key ring lug</span>
+                  <span className="text-sm">
+                    {isPremium ? "Add key ring lug" : <PremiumLabel>Add key ring lug</PremiumLabel>}
+                  </span>
                   <InfoTooltip text="Adds a cylindrical tab with a through-hole at the top-centre of the outer shell so you can clip on a real key ring or carabiner. Inner clicker is unchanged." />
                 </label>
                 {settings.keyRingEnabled && (
@@ -1745,8 +2029,10 @@ export default function Studio() {
                 )}
               </div>
             </div>
+            )}
 
             {/* ── Inner Clicker (basics) ── */}
+            {sidebarMode === "advanced" && (
             <div>
               <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
                 Inner Clicker
@@ -1801,8 +2087,10 @@ export default function Studio() {
                 />
               </div>
             </div>
+            )}
 
             {/* ── Fit Clearance ── */}
+            {sidebarMode === "advanced" && (
             <div>
               <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
                 Fit Clearance
@@ -1831,8 +2119,10 @@ export default function Studio() {
                 </p>
               </div>
             </div>
+            )}
 
             {/* ── Advanced disclosure ── */}
+            {sidebarMode === "advanced" && (
             <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
               <CollapsibleTrigger asChild>
                 <button
@@ -2121,8 +2411,10 @@ export default function Studio() {
 
               </CollapsibleContent>
             </Collapsible>
+            )}
 
             {/* Parts legend */}
+            {sidebarMode === "advanced" && (
             <div>
               <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
                 Parts
@@ -2157,19 +2449,27 @@ export default function Studio() {
                 );
               })()}
             </div>
+            )}
 
-            {/* Actions */}
+            {/* Actions — Advanced only. Simple mode keeps the sidebar to
+                upload, size, and preview color per the product spec. */}
+            {sidebarMode === "advanced" && (
             <div className="space-y-2">
               <Button
                 className="w-full"
                 onClick={handleSave}
                 disabled={isSaving || !svgState}
               >
-                <Save className="h-4 w-4 mr-2" />
-                {isSaving ? "Saving…" : projectId ? "Update Project" : "Save Project"}
+                {isGuest ? <LogIn className="h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                {isSaving
+                  ? "Saving…"
+                  : isGuest
+                    ? "Sign in to save"
+                    : projectId ? "Update Project" : "Save Project"}
               </Button>
 
-              {/* Merge toggle */}
+              {/* Merge toggle (advanced only) */}
+              {sidebarMode === "advanced" && (
               <label className="flex items-center gap-2 cursor-pointer select-none px-1 py-0.5">
                 <input
                   type="checkbox"
@@ -2186,6 +2486,7 @@ export default function Studio() {
                   </span>
                 </span>
               </label>
+              )}
 
               <Button
                 variant="outline"
@@ -2195,6 +2496,11 @@ export default function Studio() {
               >
                 <Download className="h-4 w-4 mr-2" />
                 {mergeForExport ? "Export STL (zip)" : "Export STL"}
+                {isGuest && (
+                  <span className="ml-2 text-[10px] text-muted-foreground">
+                    ({Math.max(0, 1 - getAnonStlExportCount())} free)
+                  </span>
+                )}
               </Button>
               <Button
                 variant="outline"
@@ -2203,7 +2509,7 @@ export default function Studio() {
                 disabled={!svgState}
               >
                 <Download className="h-4 w-4 mr-2" />
-                Export 3MF
+                {isPremium ? "Export 3MF" : <PremiumLabel>Export 3MF</PremiumLabel>}
               </Button>
               <Button
                 variant="outline"
@@ -2212,9 +2518,10 @@ export default function Studio() {
                 disabled={!svgState}
               >
                 <Download className="h-4 w-4 mr-2" />
-                Export OBJ
+                {isPremium ? "Export OBJ" : <PremiumLabel>Export OBJ</PremiumLabel>}
               </Button>
             </div>
+            )}
 
           </div>
         </aside>
@@ -2259,7 +2566,7 @@ export default function Studio() {
                 Wireframe
               </button>
               <button
-                onClick={() => setFitCheckMode((v) => !v)}
+                onClick={() => requirePremium("fit_check", () => setFitCheckMode((v) => !v))}
                 className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium border transition-colors ${
                   fitCheckMode
                     ? "bg-indigo-600 border-indigo-500 text-white shadow-lg"
@@ -2269,6 +2576,23 @@ export default function Studio() {
               >
                 <Layers className="h-3.5 w-3.5" />
                 Fit Check
+                {!isPremium && <Crown className="h-3 w-3 text-amber-400" />}
+              </button>
+              {/* X-Ray (Premium) */}
+              <button
+                onClick={() => requirePremium("x_ray", () =>
+                  setViewMode((v) => v === "xray" ? "solid" : "xray")
+                )}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium border transition-colors ${
+                  viewMode === "xray"
+                    ? "bg-fuchsia-600/90 border-fuchsia-500 text-white shadow-lg"
+                    : "bg-background/80 border-border text-muted-foreground hover:text-foreground backdrop-blur-sm"
+                }`}
+                title="Toggle x-ray view"
+              >
+                <EyeOff className="h-3.5 w-3.5" />
+                X-Ray
+                {!isPremium && <Crown className="h-3 w-3 text-amber-400" />}
               </button>
               {fitCheckMode && (
                 <span className="text-[10px] text-indigo-300/80 bg-indigo-950/60 border border-indigo-800/40 rounded px-2 py-1 backdrop-blur-sm">
@@ -2518,6 +2842,54 @@ export default function Studio() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Promote anonymous draft after sign-in */}
+      <AlertDialog open={promoteOpen} onOpenChange={setPromoteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save the project you were working on?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You started a design as a guest. Would you like to save it to your
+              account so you can come back to it later?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                // No: discard the in-browser draft, keep the in-memory work.
+                clearDraft();
+                setPromotePending(false);
+                setPromoteOpen(false);
+              }}
+            >
+              No, discard draft
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setPromotePending(false);
+                setPromoteOpen(false);
+                void performSave();
+              }}
+            >
+              Yes, save it
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Premium upgrade modal */}
+      <UpgradeModal
+        open={upgradeFeature !== null}
+        onOpenChange={(o) => { if (!o) setUpgradeFeature(null); }}
+        feature={upgradeFeature}
+      />
+
+      {/* Sign-in required modal */}
+      <AuthRequiredModal
+        open={authAction !== null}
+        onOpenChange={(o) => { if (!o) setAuthAction(null); }}
+        action={authAction ?? ""}
+      />
     </div>
   );
 }
