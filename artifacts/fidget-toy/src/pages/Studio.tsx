@@ -662,31 +662,50 @@ export default function Studio() {
               <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
                 Upload SVG
               </h2>
-              <div
-                className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors ${
-                  isDragging
-                    ? "border-primary bg-accent"
-                    : "border-border hover:border-primary hover:bg-accent/50"
-                }`}
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={handleDrop}
-              >
-                <Upload className="h-5 w-5 mx-auto text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground">
-                  {svgState ? (
-                    <span className="text-foreground font-medium">{svgState.fileName}</span>
-                  ) : (
-                    "Drop SVG or click to browse"
-                  )}
-                </p>
-                {svgState && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {svgState.width.toFixed(0)} × {svgState.height.toFixed(0)} px
-                  </p>
-                )}
-              </div>
+
+              {svgState ? (
+                /* ── SVG preview ── */
+                <div className="space-y-2">
+                  <div className="rounded-xl border border-border bg-accent/30 p-3 flex items-center justify-center min-h-[110px]">
+                    <img
+                      src={`data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgState.rawSvg)))}`}
+                      alt={svgState.fileName}
+                      className="max-h-[120px] max-w-full object-contain"
+                    />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs font-medium text-foreground truncate">{svgState.fileName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {svgState.width.toFixed(0)} × {svgState.height.toFixed(0)} px
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border hover:border-primary hover:bg-accent/50 text-xs text-muted-foreground hover:text-foreground transition-colors py-2 cursor-pointer"
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    Upload new SVG
+                  </button>
+                </div>
+              ) : (
+                /* ── Empty drop zone ── */
+                <div
+                  className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors ${
+                    isDragging
+                      ? "border-primary bg-accent"
+                      : "border-border hover:border-primary hover:bg-accent/50"
+                  }`}
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
+                >
+                  <Upload className="h-5 w-5 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">Drop SVG or click to browse</p>
+                </div>
+              )}
+
               <input
                 ref={fileInputRef}
                 type="file"
