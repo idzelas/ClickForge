@@ -1033,11 +1033,11 @@ export default function Studio() {
             <directionalLight position={[-30, 30, -20]} intensity={0.35} />
 
             <Suspense fallback={null}>
-              {/* Rotate entire scene so models lie flat on the print bed:
-                  +90° around X maps extrusion-Z → world -Y (depth goes down),
-                  putting the pocket face at world +Y (up) and the flat base
-                  at world -Y (on the bed). */}
-              <group rotation={[Math.PI / 2, 0, 0]}>
+              {/* Rotate entire scene so models lie flat on the print bed.
+                  -90° around X maps extrusion-Z → world +Y (depth goes up),
+                  putting the pocket/housing face at world +Y (facing the viewer)
+                  and the flat base at world -Y (on the print-bed grid). */}
+              <group rotation={[-Math.PI / 2, 0, 0]}>
                 {svgState ? (
                   <>
                     <OuterShellGroup
