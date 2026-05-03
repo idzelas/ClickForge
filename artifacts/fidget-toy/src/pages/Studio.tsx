@@ -20,6 +20,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { parseSVGContent, parseSVGColorRegions, extractSvgColor } from "@/lib/svgParser";
 import RasterToSvgModal from "@/components/RasterToSvgModal";
+import BananaMesh from "@/components/BananaMesh";
 import {
   createOuterShellGeometries,
   createInnerClickerGeometries,
@@ -1279,6 +1280,7 @@ export default function Studio() {
 
   const [mergeForExport, setMergeForExport] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [showBanana, setShowBanana] = useState(false);
 
   const getMeshGroups = (): MeshGroups => ({
     shell: [outerWallRef, innerFillFloorRef, innerFillPinSectionRef, innerFillWallsRef, innerFillHousingCapRef, shellBossBaseRef, shellBossMainRef]
@@ -2273,6 +2275,18 @@ export default function Studio() {
                   Outer shell ghosted · clicker seated in recess
                 </span>
               )}
+              <button
+                onClick={() => setShowBanana((v) => !v)}
+                className={`flex items-center justify-center rounded-md px-2 py-1.5 text-xs font-medium border transition-colors ${
+                  showBanana
+                    ? "bg-indigo-600 border-indigo-500 text-white shadow-lg"
+                    : "bg-background/80 border-border text-muted-foreground hover:text-foreground backdrop-blur-sm"
+                }`}
+                title="Banana for scale (200 mm)"
+                aria-label="Banana for scale"
+              >
+                <span aria-hidden style={{ color: "#FFE135" }}>🍌</span>
+              </button>
             </div>
               {/* ── Controls hint — below the buttons row ── */}
               <div className="flex flex-col items-end gap-1 text-[10px] text-white/30 pointer-events-none select-none">
@@ -2411,6 +2425,8 @@ export default function Studio() {
                 clickerLabelRef={clickerLabelRef}
               />
             )}
+            {showBanana && <BananaMesh />}
+
             <CameraTracker stateRef={vcStateRef} snapRef={vcSnapRef} dragRef={vcDragRef} />
             <OrbitControls makeDefault enablePan enableZoom enableRotate />
           </Canvas>
