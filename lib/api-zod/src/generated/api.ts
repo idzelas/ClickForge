@@ -38,13 +38,17 @@ export const ListProjectsResponse = zod.array(ListProjectsResponseItem);
 /**
  * @summary Create a new fidget toy project
  */
+export const createProjectBodyNameMax = 100;
+
+export const createProjectBodySvgDataMax = 1048576;
+
 export const createProjectBodyExtrudeDepthDefault = 4;
 export const createProjectBodyKeycapSizeDefault = 14;
 export const createProjectBodyPegRadiusDefault = 3.5;
 
 export const CreateProjectBody = zod.object({
-  name: zod.string(),
-  svgData: zod.string(),
+  name: zod.string().min(1).max(createProjectBodyNameMax),
+  svgData: zod.string().min(1).max(createProjectBodySvgDataMax),
   extrudeDepth: zod.number().default(createProjectBodyExtrudeDepthDefault),
   keycapSize: zod.number().default(createProjectBodyKeycapSizeDefault),
   pegRadius: zod.number().default(createProjectBodyPegRadiusDefault),
@@ -109,9 +113,13 @@ export const UpdateProjectParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const updateProjectBodyNameMax = 100;
+
+export const updateProjectBodySvgDataMax = 1048576;
+
 export const UpdateProjectBody = zod.object({
-  name: zod.string().optional(),
-  svgData: zod.string().optional(),
+  name: zod.string().min(1).max(updateProjectBodyNameMax).optional(),
+  svgData: zod.string().min(1).max(updateProjectBodySvgDataMax).optional(),
   extrudeDepth: zod.number().optional(),
   keycapSize: zod.number().optional(),
   pegRadius: zod.number().optional(),

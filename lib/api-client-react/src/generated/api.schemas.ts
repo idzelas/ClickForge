@@ -35,7 +35,15 @@ export interface Project {
 }
 
 export interface CreateProjectBody {
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
   name: string;
+  /**
+   * @minLength 1
+   * @maxLength 1048576
+   */
   svgData: string;
   extrudeDepth?: number;
   keycapSize?: number;
@@ -45,7 +53,15 @@ export interface CreateProjectBody {
 }
 
 export interface UpdateProjectBody {
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
   name?: string;
+  /**
+   * @minLength 1
+   * @maxLength 1048576
+   */
   svgData?: string;
   extrudeDepth?: number;
   keycapSize?: number;

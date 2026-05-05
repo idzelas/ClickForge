@@ -278,6 +278,7 @@ components:
       type: object
       description: Full studio settings blob — all sliders, toggles, and colors
       additionalProperties: true
+      maxProperties: 100
 
     Project:
       type: object
@@ -326,8 +327,12 @@ components:
       properties:
         name:
           type: string
+          minLength: 1
+          maxLength: 100
         svgData:
           type: string
+          minLength: 1
+          maxLength: 1048576
         extrudeDepth:
           type: number
           default: 4
@@ -349,8 +354,12 @@ components:
       properties:
         name:
           type: string
+          minLength: 1
+          maxLength: 100
         svgData:
           type: string
+          minLength: 1
+          maxLength: 1048576
         extrudeDepth:
           type: number
         keycapSize:

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
 import { projectsTable } from "@workspace/db";
-import { eq, and, desc, count } from "drizzle-orm";
+import { eq, and, desc, count, sum } from "drizzle-orm";
 import {
   CreateProjectBody,
   UpdateProjectBody,
@@ -10,9 +10,19 @@ import {
   UpdateProjectParams,
   DeleteProjectParams,
 } from "@workspace/api-zod";
-import { tierForSignedInUser, FREE_PROJECT_LIMIT } from "../lib/tier";
+import { tierForSignedInUser, FREE_PROJECT_LIMIT, PREMIUM_PROJECT_LIMIT } from "../lib/tier";
+
+const LIST_PROJECTS_LIMIT = 100;
+const SETTINGS_MAX_PROPERTIES = 100;
 
 const router = Router();
+
+function validateSettings(settings: Record<string, unknown> | null | undefined): string | null {
+  if (settings != null && Object.keys(settings).length > SETTINGS_MAX_PROPERTIES) {
+    return `settings must not exceed ${SETTINGS_MAX_PROPERTIES} properties`;
+  }
+  return null;
+}
 
 const requireAuth = (req: any, res: any, next: any) => {
   const auth = getAuth(req);
@@ -45,7 +55,8 @@ router.get("/projects", requireAuth, async (req: any, res: any) => {
       .select()
       .from(projectsTable)
       .where(eq(projectsTable.userId, req.userId))
-      .orderBy(desc(projectsTable.updatedAt));
+      .orderBy(desc(projectsTable.updatedAt))
+      .limit(LIST_PROJECTS_LIMIT);
     res.json(projects.map(toApiProject));
   } catch (err) {
     req.log.error({ err }, "Failed to list projects");
@@ -58,19 +69,29 @@ router.post("/projects", requireAuth, async (req: any, res: any) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error });
   }
+  const settingsError = validateSettings(parsed.data.settings);
+  if (settingsError) {
+    return res.status(400).json({ error: settingsError });
+  }
   try {
-    if (tierForSignedInUser() === "free") {
-      const [{ value: existing }] = await db
-        .select({ value: count() })
-        .from(projectsTable)
-        .where(eq(projectsTable.userId, req.userId));
-      if (existing >= FREE_PROJECT_LIMIT) {
-        return res.status(403).json({
-          error: `Free accounts can save up to ${FREE_PROJECT_LIMIT} projects. Upgrade to Premium for unlimited saves.`,
-          code: "PROJECT_LIMIT_REACHED",
-          limit: FREE_PROJECT_LIMIT,
-        });
-      }
+    const tier = tierForSignedInUser();
+    const [{ value: existing }] = await db
+      .select({ value: count() })
+      .from(projectsTable)
+      .where(eq(projectsTable.userId, req.userId));
+    if (tier === "free" && existing >= FREE_PROJECT_LIMIT) {
+      return res.status(403).json({
+        error: `Free accounts can save up to ${FREE_PROJECT_LIMIT} projects. Upgrade to Premium for unlimited saves.`,
+        code: "PROJECT_LIMIT_REACHED",
+        limit: FREE_PROJECT_LIMIT,
+      });
+    }
+    if (existing >= PREMIUM_PROJECT_LIMIT) {
+      return res.status(403).json({
+        error: `You have reached the maximum of ${PREMIUM_PROJECT_LIMIT} saved projects. Please delete some projects to continue.`,
+        code: "PROJECT_LIMIT_REACHED",
+        limit: PREMIUM_PROJECT_LIMIT,
+      });
     }
     const { name, svgData, extrudeDepth = 4, keycapSize = 14, pegRadius = 3.5, settings } = parsed.data;
     const [project] = await db
@@ -94,19 +115,25 @@ router.post("/projects", requireAuth, async (req: any, res: any) => {
 
 router.get("/projects/stats", requireAuth, async (req: any, res: any) => {
   try {
-    const projects = await db
+    const [agg] = await db
+      .select({
+        totalProjects: count(),
+        totalExports: sum(projectsTable.exportCount),
+      })
+      .from(projectsTable)
+      .where(eq(projectsTable.userId, req.userId));
+
+    const [mostRecentRow] = await db
       .select()
       .from(projectsTable)
       .where(eq(projectsTable.userId, req.userId))
-      .orderBy(desc(projectsTable.updatedAt));
-
-    const totalExports = projects.reduce((sum, p) => sum + (p.exportCount || 0), 0);
-    const mostRecentProject = projects.length > 0 ? toApiProject(projects[0]) : null;
+      .orderBy(desc(projectsTable.updatedAt))
+      .limit(1);
 
     res.json({
-      totalProjects: projects.length,
-      totalExports,
-      mostRecentProject,
+      totalProjects: agg?.totalProjects ?? 0,
+      totalExports: Number(agg?.totalExports ?? 0),
+      mostRecentProject: mostRecentRow ? toApiProject(mostRecentRow) : null,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get project stats");
@@ -140,6 +167,10 @@ router.put("/projects/:id", requireAuth, async (req: any, res: any) => {
   const bodyParsed = UpdateProjectBody.safeParse(req.body);
   if (!bodyParsed.success) {
     return res.status(400).json({ error: bodyParsed.error });
+  }
+  const settingsError = validateSettings(bodyParsed.data.settings);
+  if (settingsError) {
+    return res.status(400).json({ error: settingsError });
   }
   try {
     const updates: Partial<typeof projectsTable.$inferInsert> = {

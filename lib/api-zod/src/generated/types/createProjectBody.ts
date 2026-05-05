@@ -8,7 +8,15 @@
 import type { FidgetSettingsBlob } from "./fidgetSettingsBlob";
 
 export interface CreateProjectBody {
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
   name: string;
+  /**
+   * @minLength 1
+   * @maxLength 1048576
+   */
   svgData: string;
   extrudeDepth?: number;
   keycapSize?: number;

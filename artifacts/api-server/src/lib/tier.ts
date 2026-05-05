@@ -8,6 +8,12 @@ export const BETA_AUTO_PREMIUM = true;
 
 export const FREE_PROJECT_LIMIT = 3;
 
+/**
+ * Hard cap applied to every account regardless of tier to prevent resource
+ * exhaustion. Even premium/beta users cannot exceed this count.
+ */
+export const PREMIUM_PROJECT_LIMIT = 200;
+
 export type ServerTier = "free" | "premium";
 
 export function tierForSignedInUser(): ServerTier {
