@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, Suspense, useEffect } from "react";
+import { useState, useRef, useCallback, useMemo, Suspense, useEffect, memo } from "react";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls, Grid, Html, Line } from "@react-three/drei";
 import * as THREE from "three";
@@ -238,7 +238,7 @@ function arraysShallowEqual<T>(a: readonly T[], b: readonly T[]): boolean {
  * `shellColor` / `clickerColor` parent state changed (which doesn't affect
  * colour-layer geometry or rendering at all).
  */
-const ColorLayersGroup = React.memo(
+const ColorLayersGroup = memo(
   ColorLayersGroupInner,
   (prev, next) =>
     prev.geometries === next.geometries &&
@@ -451,7 +451,7 @@ function OuterShellGroupInner({
  * safe.  Active-highlight arrays are recreated each parent render but their
  * contents only change on hover, so we shallow-compare them.
  */
-const OuterShellGroup = React.memo(
+const OuterShellGroup = memo(
   OuterShellGroupInner,
   (prev, next) =>
     prev.shapes === next.shapes &&
@@ -635,7 +635,7 @@ function InnerClickerGroupInner({
  * React.memo wrapper for InnerClickerGroup — symmetric with OuterShellGroup.
  * Skips re-render when only shell-side or cosmetic state changed.
  */
-const InnerClickerGroup = React.memo(
+const InnerClickerGroup = memo(
   InnerClickerGroupInner,
   (prev, next) =>
     prev.shapes === next.shapes &&
