@@ -173,10 +173,20 @@ function ClerkProviderWithRoutes() {
     >
       <QueryClientProvider client={queryClient}>
         <ClerkQueryClientCacheInvalidator />
-        {/* Single Suspense boundary covers every lazy route. The fallback is
-            an empty div so we don't flash placeholder UI before the Studio
-            chunk finishes loading — the chunks are tiny over the wire. */}
-        <Suspense fallback={<div />}>
+        {/* Single Suspense boundary covers every lazy route.  The fallback
+            is a faint, centred spinner so slow networks see *something*
+            without a noisy flash on fast loads. */}
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 grid place-items-center pointer-events-none">
+              <div
+                className="h-8 w-8 rounded-full border-2 border-muted-foreground/30 border-t-foreground animate-spin opacity-70"
+                role="status"
+                aria-label="Loading"
+              />
+            </div>
+          }
+        >
           <Switch>
             <Route path="/" component={HomeRedirect} />
             <Route path="/sign-in/*?" component={SignInPage} />
