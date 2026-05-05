@@ -28,6 +28,11 @@ function isInvisibleRect(el: Element): boolean {
   const noFill   = effectiveFill   === "" || effectiveFill   === "none";
   const noStroke = effectiveStroke === "" || effectiveStroke === "none" || effectiveSW === 0;
 
+  // If the element uses a CSS class, its fill may be defined in <defs><style>.
+  // We cannot resolve class-based styles here, so treat it as visible.
+  const hasClass = (el.getAttribute("class") ?? "").trim() !== "";
+  if (hasClass) return false;
+
   return noFill && noStroke;
 }
 
