@@ -49,7 +49,11 @@ import {
   createColorLayerGeometries,
   validateGeometry,
   getShellTotalDepth,
-  getGeometrySignature,
+  getOuterShellSig,
+  getInnerClickerSig,
+  getColorLayerSig,
+  getKeyRingSig,
+  getValidateSig,
   DEFAULT_SETTINGS,
   type FidgetSettings,
   type GeometryWarning,
@@ -177,7 +181,7 @@ type ViewMode = "solid" | "wireframe" | "xray";
  * shell's bottom face (z=0 .. colorLayerThickness) so exports are unaffected
  * by the preview-only stagger.
  */
-function ColorLayersGroup({
+function ColorLayersGroupInner({
   geometries,
   settings,
   svgWidth,
@@ -217,7 +221,38 @@ function ColorLayersGroup({
   );
 }
 
-function OuterShellGroup({
+/**
+ * Shallow-equal an array of primitives.  Used by the React.memo comparators
+ * below so transient `activeHighlights` array re-allocations (which happen on
+ * every parent render) don't defeat memoisation.
+ */
+function arraysShallowEqual<T>(a: readonly T[], b: readonly T[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * React.memo wrapper for ColorLayersGroup.  Skips re-rendering when only the
+ * `shellColor` / `clickerColor` parent state changed (which doesn't affect
+ * colour-layer geometry or rendering at all).
+ */
+const ColorLayersGroup = React.memo(
+  ColorLayersGroupInner,
+  (prev, next) =>
+    prev.geometries === next.geometries &&
+    prev.svgWidth === next.svgWidth &&
+    prev.svgHeight === next.svgHeight &&
+    prev.fitCheck === next.fitCheck &&
+    prev.groupRef === next.groupRef &&
+    getColorLayerSig(prev.settings) === getColorLayerSig(next.settings) &&
+    // ColorLayersGroup also reads flipShell + targetSizeMm/lockDimension
+    // outside the geometry sig (for positioning), so guard those too.
+    (prev.settings.flipShell ?? false) === (next.settings.flipShell ?? false),
+);
+
+function OuterShellGroupInner({
   shapes,
   settings,
   svgWidth,
@@ -254,14 +289,17 @@ function OuterShellGroup({
   activeHighlights: MeshKey[];
   viewMode?: ViewMode;
 }) {
-  // Cache key that excludes cosmetic colour fields — picking a new colour
-  // no longer retriggers ExtrudeGeometry. Same-content strings compare equal
-  // under React's Object.is dep check so this is effectively memoised.
-  const geomSig = getGeometrySignature(settings);
+  // Cache keys that exclude cosmetic colour fields and any setting the
+  // matching builder doesn't read.  Same-content strings compare equal under
+  // React's Object.is dep check so this is effectively memoised — picking a
+  // new colour, toggling the key ring, or moving the colour-layer slider all
+  // skip the (very expensive) ExtrudeGeometry rebuild here.
+  const shellSig   = getOuterShellSig(settings);
+  const keyRingSig = getKeyRingSig(settings);
   const geos = useMemo(
     () => createOuterShellGeometries(shapes, settings, svgWidth, svgHeight),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shapes, geomSig, svgWidth, svgHeight]
+    [shapes, shellSig, svgWidth, svgHeight]
   );
 
   const keyRing = useMemo(
@@ -269,7 +307,7 @@ function OuterShellGroup({
       ? createKeyRingGeometry(geos.bounds, settings)
       : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [geos, geomSig, settings.keyRingEnabled]
+    [geos, keyRingSig]
   );
 
   // Report actual shell footprint to parent whenever geometry changes.
@@ -405,9 +443,43 @@ function OuterShellGroup({
   );
 }
 
+/**
+ * React.memo wrapper for OuterShellGroup.  Bypasses the entire JSX rebuild
+ * when the parent re-renders for reasons unrelated to the shell geometry
+ * (e.g. picking a clicker colour, hovering a clicker-only slider).  Refs
+ * (outerWallRef etc.) are stable across renders so identity comparison is
+ * safe.  Active-highlight arrays are recreated each parent render but their
+ * contents only change on hover, so we shallow-compare them.
+ */
+const OuterShellGroup = React.memo(
+  OuterShellGroupInner,
+  (prev, next) =>
+    prev.shapes === next.shapes &&
+    prev.svgWidth === next.svgWidth &&
+    prev.svgHeight === next.svgHeight &&
+    prev.color === next.color &&
+    prev.fitCheck === next.fitCheck &&
+    prev.viewMode === next.viewMode &&
+    prev.onBounds === next.onBounds &&
+    prev.outerWallRef === next.outerWallRef &&
+    prev.innerFillFloorRef === next.innerFillFloorRef &&
+    prev.innerFillPinSectionRef === next.innerFillPinSectionRef &&
+    prev.innerFillWallsRef === next.innerFillWallsRef &&
+    prev.innerFillHousingCapRef === next.innerFillHousingCapRef &&
+    prev.shellBossBaseRef === next.shellBossBaseRef &&
+    prev.shellBossMainRef === next.shellBossMainRef &&
+    prev.keyRingRef === next.keyRingRef &&
+    arraysShallowEqual(prev.activeHighlights, next.activeHighlights) &&
+    getOuterShellSig(prev.settings) === getOuterShellSig(next.settings) &&
+    getKeyRingSig(prev.settings) === getKeyRingSig(next.settings) &&
+    // flipShell / pinHolesEnabled gate JSX branches outside the sig.
+    (prev.settings.flipShell ?? false) === (next.settings.flipShell ?? false) &&
+    (prev.settings.pinHolesEnabled ?? false) === (next.settings.pinHolesEnabled ?? false),
+);
+
 // ─── Inner clicker: body + actuator boss ──────────────────────────────────
 
-function InnerClickerGroup({
+function InnerClickerGroupInner({
   shapes,
   settings,
   svgWidth,
@@ -438,12 +510,14 @@ function InnerClickerGroup({
   activeHighlights: MeshKey[];
   viewMode?: ViewMode;
 }) {
-  // Same colour-stable cache key as OuterShellGroup — see getGeometrySignature.
-  const geomSig = getGeometrySignature(settings);
+  // Per-concern cache key — see getInnerClickerSig.  Excludes shell-only
+  // fields so e.g. dragging the shell wall extension never rebuilds the
+  // inner clicker.
+  const clickerSig = getInnerClickerSig(settings);
   const geos = useMemo(
     () => createInnerClickerGeometries(shapes, settings, svgWidth, svgHeight),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shapes, geomSig, svgWidth, svgHeight]
+    [shapes, clickerSig, svgWidth, svgHeight]
   );
 
   // Report actual clicker footprint to parent whenever geometry changes.
@@ -556,6 +630,38 @@ function InnerClickerGroup({
     </group>
   );
 }
+
+/**
+ * React.memo wrapper for InnerClickerGroup — symmetric with OuterShellGroup.
+ * Skips re-render when only shell-side or cosmetic state changed.
+ */
+const InnerClickerGroup = React.memo(
+  InnerClickerGroupInner,
+  (prev, next) =>
+    prev.shapes === next.shapes &&
+    prev.svgWidth === next.svgWidth &&
+    prev.svgHeight === next.svgHeight &&
+    prev.color === next.color &&
+    prev.fitCheck === next.fitCheck &&
+    prev.viewMode === next.viewMode &&
+    prev.onBounds === next.onBounds &&
+    prev.clickerFloorRef === next.clickerFloorRef &&
+    prev.clickerWallsRef === next.clickerWallsRef &&
+    prev.clickerPinSectionRef === next.clickerPinSectionRef &&
+    prev.bossBaseRef === next.bossBaseRef &&
+    prev.bossMainRef === next.bossMainRef &&
+    arraysShallowEqual(prev.activeHighlights, next.activeHighlights) &&
+    getInnerClickerSig(prev.settings) === getInnerClickerSig(next.settings) &&
+    // The clicker reads shell housing depth + flipClicker for positioning
+    // outside the geometry sig, so include those too.
+    (prev.settings.flipClicker ?? false) === (next.settings.flipClicker ?? false) &&
+    (prev.settings.shellSolidFloor ?? DEFAULT_SETTINGS.shellSolidFloor) ===
+      (next.settings.shellSolidFloor ?? DEFAULT_SETTINGS.shellSolidFloor) &&
+    (prev.settings.shellSwitchHousing ?? DEFAULT_SETTINGS.shellSwitchHousing) ===
+      (next.settings.shellSwitchHousing ?? DEFAULT_SETTINGS.shellSwitchHousing) &&
+    (prev.settings.shellWallExtension ?? DEFAULT_SETTINGS.shellWallExtension) ===
+      (next.settings.shellWallExtension ?? DEFAULT_SETTINGS.shellWallExtension),
+);
 
 // ─── Edge wireframe overlay — EdgesGeometry lines, Blender-style ─────────
 
@@ -1179,19 +1285,21 @@ export default function Studio() {
     [svgState],
   );
 
-  // Cache key for the heavy parent-side memos that derive from `settings`.
-  // Same trick as OuterShellGroup — colour-only edits keep the cached value.
-  const geomSig = useMemo(() => getGeometrySignature(settings), [settings]);
+  // Per-concern cache keys for the parent-side memos.  Colour-layer extrusion
+  // and validation each only depend on a tight subset of fields, so this
+  // keeps cosmetic edits and unrelated slider drags from retriggering them.
+  const colorLayerSig = useMemo(() => getColorLayerSig(settings), [settings]);
+  const validateSig   = useMemo(() => getValidateSig(settings),   [settings]);
 
-  // Extruded slab geometry for each color region — recomputed when the SVG
-  // or any geometry-affecting setting changes (colour edits do not retrigger).
+  // Extruded slab geometry for each color region — recomputed only when the
+  // SVG, the colour regions, or a colour-layer-affecting setting changes.
   const colorLayerGeometries = useMemo(
     () =>
       svgState
         ? createColorLayerGeometries(colorRegions, settings, svgState.width, svgState.height)
         : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [colorRegions, geomSig, svgState],
+    [colorRegions, colorLayerSig, svgState],
   );
 
   const geoWarnings = useMemo<GeometryWarning[]>(
@@ -1199,7 +1307,7 @@ export default function Studio() {
       ? validateGeometry(svgState.shapes, settings, svgState.width, svgState.height)
       : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [svgState, geomSig]
+    [svgState, validateSig]
   );
 
   // Compute grid metrics that track the actual model footprint so the
@@ -2071,6 +2179,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("insetAmount", v)}
+                  commitOnRelease
                   defaultValue={DEFAULT_SETTINGS.insetAmount}
                   onReset={() => setSetting("insetAmount", DEFAULT_SETTINGS.insetAmount)}
                   {...hl(["shell_outer", "shell_floor", "shell_walls"])}
@@ -2116,6 +2225,7 @@ export default function Studio() {
                       step={0.1}
                       unit="mm"
                       onChange={(v) => setSetting("keyRingOuterDiameter", v)}
+                      commitOnRelease
                       defaultValue={DEFAULT_SETTINGS.keyRingOuterDiameter}
                       onReset={() => setSetting("keyRingOuterDiameter", DEFAULT_SETTINGS.keyRingOuterDiameter)}
                     />
@@ -2127,6 +2237,7 @@ export default function Studio() {
                       step={0.1}
                       unit="mm"
                       onChange={(v) => setSetting("keyRingHoleDiameter", v)}
+                      commitOnRelease
                       defaultValue={DEFAULT_SETTINGS.keyRingHoleDiameter}
                       onReset={() => setSetting("keyRingHoleDiameter", DEFAULT_SETTINGS.keyRingHoleDiameter)}
                     />
@@ -2138,6 +2249,7 @@ export default function Studio() {
                       step={0.1}
                       unit="mm"
                       onChange={(v) => setSetting("keyRingThickness", v)}
+                      commitOnRelease
                       defaultValue={DEFAULT_SETTINGS.keyRingThickness}
                       onReset={() => setSetting("keyRingThickness", DEFAULT_SETTINGS.keyRingThickness)}
                     />
@@ -2187,6 +2299,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("clickerTotalDepth", v)}
+                  commitOnRelease
                   defaultValue={DEFAULT_SETTINGS.clickerTotalDepth}
                   onReset={() => setSetting("clickerTotalDepth", DEFAULT_SETTINGS.clickerTotalDepth)}
                   {...hl(["click_floor", "click_walls"])}
@@ -2199,6 +2312,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("clickerFloorDepth", v)}
+                  commitOnRelease
                   defaultValue={DEFAULT_SETTINGS.clickerFloorDepth}
                   onReset={() => setSetting("clickerFloorDepth", DEFAULT_SETTINGS.clickerFloorDepth)}
                   {...hl(["click_floor"])}
@@ -2222,6 +2336,7 @@ export default function Studio() {
                   step={0.01}
                   unit="mm"
                   onChange={(v) => setSetting("clearanceMm", v)}
+                  commitOnRelease
                   defaultValue={DEFAULT_SETTINGS.clearanceMm}
                   onReset={() => setSetting("clearanceMm", DEFAULT_SETTINGS.clearanceMm)}
                   {...hl(
@@ -2334,6 +2449,7 @@ export default function Studio() {
                       step={0.01}
                       unit="mm"
                       onChange={(v) => setSetting("keycapSize", v)}
+                      commitOnRelease
                       defaultValue={DEFAULT_SETTINGS.keycapSize}
                       onReset={() => setSetting("keycapSize", DEFAULT_SETTINGS.keycapSize)}
                       {...hl(["shell_walls"])}
@@ -2346,6 +2462,7 @@ export default function Studio() {
                       step={0.01}
                       unit="mm"
                       onChange={(v) => setSetting("clickerSquareSize", v)}
+                      commitOnRelease
                       defaultValue={DEFAULT_SETTINGS.clickerSquareSize}
                       onReset={() => setSetting("clickerSquareSize", DEFAULT_SETTINGS.clickerSquareSize)}
                       {...hl(["click_walls"])}
@@ -2358,6 +2475,7 @@ export default function Studio() {
                       step={0.01}
                       unit="mm"
                       onChange={(v) => setSetting("clickerSquareDepth", v)}
+                      commitOnRelease
                       defaultValue={DEFAULT_SETTINGS.clickerSquareDepth}
                       onReset={() => setSetting("clickerSquareDepth", DEFAULT_SETTINGS.clickerSquareDepth)}
                       {...hl(["click_walls"])}
@@ -2380,6 +2498,7 @@ export default function Studio() {
                       step={0.01}
                       unit="mm"
                       onChange={(v) => setSetting("bossDiameter", v)}
+                      commitOnRelease
                       defaultValue={DEFAULT_SETTINGS.bossDiameter}
                       onReset={() => setSetting("bossDiameter", DEFAULT_SETTINGS.bossDiameter)}
                       {...hl(["click_boss"])}
@@ -2392,6 +2511,7 @@ export default function Studio() {
                       step={0.01}
                       unit="mm"
                       onChange={(v) => setSetting("bossHeight", v)}
+                      commitOnRelease
                       defaultValue={DEFAULT_SETTINGS.bossHeight}
                       onReset={() => setSetting("bossHeight", DEFAULT_SETTINGS.bossHeight)}
                       {...hl(["click_boss"])}
@@ -2404,6 +2524,7 @@ export default function Studio() {
                       step={0.01}
                       unit="mm"
                       onChange={(v) => setSetting("bossFloorGap", v)}
+                      commitOnRelease
                       defaultValue={DEFAULT_SETTINGS.bossFloorGap}
                       onReset={() => setSetting("bossFloorGap", DEFAULT_SETTINGS.bossFloorGap)}
                       {...hl(["click_boss"])}
@@ -2419,6 +2540,7 @@ export default function Studio() {
                       step={0.01}
                       unit="mm"
                       onChange={(v) => setSetting("crossSize", v)}
+                      commitOnRelease
                       defaultValue={DEFAULT_SETTINGS.crossSize}
                       onReset={() => setSetting("crossSize", DEFAULT_SETTINGS.crossSize)}
                       {...hl(["click_boss"])}
@@ -2431,6 +2553,7 @@ export default function Studio() {
                       step={0.01}
                       unit="mm"
                       onChange={(v) => setSetting("crossDepth", v)}
+                      commitOnRelease
                       defaultValue={DEFAULT_SETTINGS.crossDepth}
                       onReset={() => setSetting("crossDepth", DEFAULT_SETTINGS.crossDepth)}
                       {...hl(["click_boss"])}
@@ -2443,6 +2566,7 @@ export default function Studio() {
                       step={0.01}
                       unit="mm"
                       onChange={(v) => setSetting("crossArmWidth", v)}
+                      commitOnRelease
                       defaultValue={DEFAULT_SETTINGS.crossArmWidth}
                       onReset={() => setSetting("crossArmWidth", DEFAULT_SETTINGS.crossArmWidth)}
                       {...hl(["click_boss"])}
@@ -2490,6 +2614,7 @@ export default function Studio() {
                         step={0.01}
                         unit="mm"
                         onChange={(v) => setSetting("pinHoleRadius", v)}
+                        commitOnRelease
                         defaultValue={DEFAULT_SETTINGS.pinHoleRadius}
                         onReset={() => setSetting("pinHoleRadius", DEFAULT_SETTINGS.pinHoleRadius)}
                         {...hl(["shell_pin"])}

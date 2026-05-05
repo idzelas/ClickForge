@@ -217,34 +217,64 @@ export interface InnerClickerGeometries {
 // ---------------------------------------------------------------------------
 
 /**
- * Build a stable cache key string from every settings field that influences
- * geometry — i.e. everything except the cosmetic colour fields
- * (`shellColor`, `clickerColor`).  Used as the dep for the heavy
- * `useMemo`s in Studio so that picking a new colour does NOT retrigger
- * `THREE.ExtrudeGeometry`.
+ * Per-concern cache keys.  Each lists ONLY the fields the matching builder
+ * actually reads, so unrelated edits (e.g. picking a clicker colour, toggling
+ * the key ring while looking at the inner clicker, nudging the colour-layer
+ * thickness while looking at the shell) cannot invalidate the wrong memo.
  *
- * Two strings with identical contents compare equal under `Object.is`
- * (primitives), so React's dep comparator will treat them as unchanged.
- *
- * IMPORTANT: every field that the geometry builders read must appear here
- * or the preview will silently stop updating when that field changes.
+ * Two strings with identical contents compare equal under `Object.is`, so
+ * React's dep array treats them as unchanged.  Whenever you add a new
+ * geometry-affecting setting, list it in EVERY signature whose builder reads
+ * it — otherwise the corresponding preview will silently go stale.
  */
-export function getGeometrySignature(s: FidgetSettings): string {
+export function getOuterShellSig(s: FidgetSettings): string {
   return [
     s.shellSolidFloor, s.shellSwitchHousing, s.shellWallExtension,
     s.keycapPocketDepth, s.insetAmount, s.keycapSize,
-    s.targetSizeMm, s.lockDimension,
     s.pinHolesEnabled, s.pinHoleRadius, s.pinHoleDepth,
+    s.bossDiameter, s.bossHeight, s.bossFloorGap,
+    s.crossSize, s.crossDepth, s.crossArmWidth,
+    s.pocketOffsetX, s.pocketOffsetY,
+    s.mirrorShell, s.svgIsClickerShape, s.clearanceMm,
+    s.swapCutouts, s.clickerSquareSize,
+    s.targetSizeMm, s.lockDimension,
+  ].join("|");
+}
+
+export function getInnerClickerSig(s: FidgetSettings): string {
+  return [
+    s.insetAmount, s.keycapPocketDepth,
     s.clickerTotalDepth, s.clickerFloorDepth,
     s.clickerSquareSize, s.clickerSquareDepth,
     s.bossDiameter, s.bossHeight, s.bossFloorGap,
     s.crossSize, s.crossDepth, s.crossArmWidth,
+    s.swapCutouts, s.pinHolesEnabled, s.pinHoleRadius, s.pinHoleDepth,
     s.pocketOffsetX, s.pocketOffsetY,
-    s.flipShell, s.flipClicker, s.mirrorShell, s.mirrorClicker,
-    s.svgIsClickerShape, s.clearanceMm,
+    s.mirrorClicker, s.svgIsClickerShape, s.clearanceMm,
+    s.targetSizeMm, s.lockDimension,
+  ].join("|");
+}
+
+export function getColorLayerSig(s: FidgetSettings): string {
+  return [
+    s.colorLayerThickness, s.mirrorShell,
+    s.targetSizeMm, s.lockDimension,
+  ].join("|");
+}
+
+export function getKeyRingSig(s: FidgetSettings): string {
+  return [
     s.keyRingEnabled, s.keyRingOuterDiameter,
     s.keyRingHoleDiameter, s.keyRingThickness,
-    s.colorLayerThickness, s.swapCutouts,
+  ].join("|");
+}
+
+export function getValidateSig(s: FidgetSettings): string {
+  return [
+    s.insetAmount, s.keycapSize, s.clickerSquareSize,
+    s.bossDiameter, s.clearanceMm,
+    s.mirrorShell, s.svgIsClickerShape,
+    s.targetSizeMm, s.lockDimension,
   ].join("|");
 }
 
