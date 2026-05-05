@@ -216,6 +216,38 @@ export interface InnerClickerGeometries {
 // Derived helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Build a stable cache key string from every settings field that influences
+ * geometry — i.e. everything except the cosmetic colour fields
+ * (`shellColor`, `clickerColor`).  Used as the dep for the heavy
+ * `useMemo`s in Studio so that picking a new colour does NOT retrigger
+ * `THREE.ExtrudeGeometry`.
+ *
+ * Two strings with identical contents compare equal under `Object.is`
+ * (primitives), so React's dep comparator will treat them as unchanged.
+ *
+ * IMPORTANT: every field that the geometry builders read must appear here
+ * or the preview will silently stop updating when that field changes.
+ */
+export function getGeometrySignature(s: FidgetSettings): string {
+  return [
+    s.shellSolidFloor, s.shellSwitchHousing, s.shellWallExtension,
+    s.keycapPocketDepth, s.insetAmount, s.keycapSize,
+    s.targetSizeMm, s.lockDimension,
+    s.pinHolesEnabled, s.pinHoleRadius, s.pinHoleDepth,
+    s.clickerTotalDepth, s.clickerFloorDepth,
+    s.clickerSquareSize, s.clickerSquareDepth,
+    s.bossDiameter, s.bossHeight, s.bossFloorGap,
+    s.crossSize, s.crossDepth, s.crossArmWidth,
+    s.pocketOffsetX, s.pocketOffsetY,
+    s.flipShell, s.flipClicker, s.mirrorShell, s.mirrorClicker,
+    s.svgIsClickerShape, s.clearanceMm,
+    s.keyRingEnabled, s.keyRingOuterDiameter,
+    s.keyRingHoleDiameter, s.keyRingThickness,
+    s.colorLayerThickness, s.swapCutouts,
+  ].join("|");
+}
+
 /** Derived total outer shell depth = solid floor + switch housing + wall extension. */
 export function getShellTotalDepth(settings: Pick<FidgetSettings, "shellSolidFloor" | "shellSwitchHousing" | "shellWallExtension">): number {
   const floor   = settings.shellSolidFloor   ?? DEFAULT_SETTINGS.shellSolidFloor;

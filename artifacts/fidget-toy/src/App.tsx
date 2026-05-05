@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, lazy, Suspense } from "react";
 import { ClerkProvider, SignIn, SignUp, Show, useClerk } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { shadcn } from "@clerk/themes";
@@ -7,10 +7,14 @@ import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import Home from "@/pages/Home";
-import Studio from "@/pages/Studio";
-import Projects from "@/pages/Projects";
-import Library from "@/pages/Library";
-import NotFound from "@/pages/not-found";
+
+// Heavy / rarely-used routes are code-split so the first paint of the marketing
+// home page (and Clerk sign-in/up) doesn't pay the cost of pulling in three.js,
+// the geometry builders, or the project / library list views.
+const Studio = lazy(() => import("@/pages/Studio"));
+const Projects = lazy(() => import("@/pages/Projects"));
+const Library = lazy(() => import("@/pages/Library"));
+const NotFound = lazy(() => import("@/pages/not-found"));
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -169,16 +173,21 @@ function ClerkProviderWithRoutes() {
     >
       <QueryClientProvider client={queryClient}>
         <ClerkQueryClientCacheInvalidator />
-        <Switch>
-          <Route path="/" component={HomeRedirect} />
-          <Route path="/sign-in/*?" component={SignInPage} />
-          <Route path="/sign-up/*?" component={SignUpPage} />
-          <Route path="/studio" component={PublicStudio} />
-          <Route path="/studio/:id" component={() => <ProtectedRoute component={Studio} />} />
-          <Route path="/projects" component={() => <ProtectedRoute component={Projects} />} />
-          <Route path="/library" component={() => <ProtectedRoute component={Library} />} />
-          <Route component={NotFound} />
-        </Switch>
+        {/* Single Suspense boundary covers every lazy route. The fallback is
+            an empty div so we don't flash placeholder UI before the Studio
+            chunk finishes loading — the chunks are tiny over the wire. */}
+        <Suspense fallback={<div />}>
+          <Switch>
+            <Route path="/" component={HomeRedirect} />
+            <Route path="/sign-in/*?" component={SignInPage} />
+            <Route path="/sign-up/*?" component={SignUpPage} />
+            <Route path="/studio" component={PublicStudio} />
+            <Route path="/studio/:id" component={() => <ProtectedRoute component={Studio} />} />
+            <Route path="/projects" component={() => <ProtectedRoute component={Projects} />} />
+            <Route path="/library" component={() => <ProtectedRoute component={Library} />} />
+            <Route component={NotFound} />
+          </Switch>
+        </Suspense>
         <Toaster />
       </QueryClientProvider>
     </ClerkProvider>

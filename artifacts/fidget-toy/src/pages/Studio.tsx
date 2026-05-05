@@ -49,6 +49,7 @@ import {
   createColorLayerGeometries,
   validateGeometry,
   getShellTotalDepth,
+  getGeometrySignature,
   DEFAULT_SETTINGS,
   type FidgetSettings,
   type GeometryWarning,
@@ -253,10 +254,14 @@ function OuterShellGroup({
   activeHighlights: MeshKey[];
   viewMode?: ViewMode;
 }) {
+  // Cache key that excludes cosmetic colour fields — picking a new colour
+  // no longer retriggers ExtrudeGeometry. Same-content strings compare equal
+  // under React's Object.is dep check so this is effectively memoised.
+  const geomSig = getGeometrySignature(settings);
   const geos = useMemo(
     () => createOuterShellGeometries(shapes, settings, svgWidth, svgHeight),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shapes, settings, svgWidth, svgHeight]
+    [shapes, geomSig, svgWidth, svgHeight]
   );
 
   const keyRing = useMemo(
@@ -264,7 +269,7 @@ function OuterShellGroup({
       ? createKeyRingGeometry(geos.bounds, settings)
       : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [geos, settings]
+    [geos, geomSig, settings.keyRingEnabled]
   );
 
   // Report actual shell footprint to parent whenever geometry changes.
@@ -433,10 +438,12 @@ function InnerClickerGroup({
   activeHighlights: MeshKey[];
   viewMode?: ViewMode;
 }) {
+  // Same colour-stable cache key as OuterShellGroup — see getGeometrySignature.
+  const geomSig = getGeometrySignature(settings);
   const geos = useMemo(
     () => createInnerClickerGeometries(shapes, settings, svgWidth, svgHeight),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shapes, settings, svgWidth, svgHeight]
+    [shapes, geomSig, svgWidth, svgHeight]
   );
 
   // Report actual clicker footprint to parent whenever geometry changes.
@@ -1172,22 +1179,19 @@ export default function Studio() {
     [svgState],
   );
 
-  // Extruded slab geometry for each color region — recomputed when the SVG,
-  // its fill palette, or the colorLayerThickness setting changes.
+  // Cache key for the heavy parent-side memos that derive from `settings`.
+  // Same trick as OuterShellGroup — colour-only edits keep the cached value.
+  const geomSig = useMemo(() => getGeometrySignature(settings), [settings]);
+
+  // Extruded slab geometry for each color region — recomputed when the SVG
+  // or any geometry-affecting setting changes (colour edits do not retrigger).
   const colorLayerGeometries = useMemo(
     () =>
       svgState
         ? createColorLayerGeometries(colorRegions, settings, svgState.width, svgState.height)
         : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      colorRegions,
-      settings.colorLayerThickness,
-      settings.mirrorShell,
-      settings.targetSizeMm,
-      settings.lockDimension,
-      svgState,
-    ],
+    [colorRegions, geomSig, svgState],
   );
 
   const geoWarnings = useMemo<GeometryWarning[]>(
@@ -1195,7 +1199,7 @@ export default function Studio() {
       ? validateGeometry(svgState.shapes, settings, svgState.width, svgState.height)
       : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [svgState, settings]
+    [svgState, geomSig]
   );
 
   // Compute grid metrics that track the actual model footprint so the
@@ -1882,15 +1886,14 @@ export default function Studio() {
                 </h2>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Model color</span>
-                  <input
-                    type="color"
+                  <DebouncedColorInput
                     value={settings.shellColor ?? DEFAULT_SETTINGS.shellColor}
-                    onChange={(e) => {
+                    onChange={(v) => {
                       // Keep both parts visually in-sync in Simple mode.
                       setSettings((s) => ({
                         ...s,
-                        shellColor: e.target.value,
-                        clickerColor: e.target.value,
+                        shellColor: v,
+                        clickerColor: v,
                       }));
                     }}
                     className="h-8 w-14 rounded border border-input cursor-pointer bg-transparent p-0.5"
@@ -1985,10 +1988,9 @@ export default function Studio() {
               <div className="space-y-5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Preview color</span>
-                  <input
-                    type="color"
+                  <DebouncedColorInput
                     value={settings.shellColor ?? DEFAULT_SETTINGS.shellColor}
-                    onChange={(e) => setSetting("shellColor", e.target.value)}
+                    onChange={(v) => setSetting("shellColor", v)}
                     className="h-8 w-14 rounded border border-input cursor-pointer bg-transparent p-0.5"
                   />
                 </div>
@@ -2026,6 +2028,7 @@ export default function Studio() {
                   onChange={(v) => setSetting("shellSolidFloor", v)}
                   defaultValue={DEFAULT_SETTINGS.shellSolidFloor}
                   onReset={() => setSetting("shellSolidFloor", DEFAULT_SETTINGS.shellSolidFloor)}
+                  commitOnRelease
                   {...hl(["shell_floor"])}
                 />
                 <SliderRow
@@ -2038,6 +2041,7 @@ export default function Studio() {
                   onChange={(v) => setSetting("shellSwitchHousing", v)}
                   defaultValue={DEFAULT_SETTINGS.shellSwitchHousing}
                   onReset={() => setSetting("shellSwitchHousing", DEFAULT_SETTINGS.shellSwitchHousing)}
+                  commitOnRelease
                   {...hl(["shell_walls", "shell_pin"])}
                 />
                 <SliderRow
@@ -2050,6 +2054,7 @@ export default function Studio() {
                   onChange={(v) => setSetting("shellWallExtension", v)}
                   defaultValue={DEFAULT_SETTINGS.shellWallExtension}
                   onReset={() => setSetting("shellWallExtension", DEFAULT_SETTINGS.shellWallExtension)}
+                  commitOnRelease
                   {...hl(["shell_extension"])}
                 />
                 <div className="flex items-center justify-between text-xs text-muted-foreground py-0.5">
@@ -2154,10 +2159,9 @@ export default function Studio() {
               <div className="space-y-5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Preview color</span>
-                  <input
-                    type="color"
+                  <DebouncedColorInput
                     value={settings.clickerColor ?? DEFAULT_SETTINGS.clickerColor}
-                    onChange={(e) => setSetting("clickerColor", e.target.value)}
+                    onChange={(v) => setSetting("clickerColor", v)}
                     className="h-8 w-14 rounded border border-input cursor-pointer bg-transparent p-0.5"
                   />
                 </div>
@@ -2291,6 +2295,7 @@ export default function Studio() {
                         onChange={(v) => setSetting("colorLayerThickness", v)}
                         defaultValue={DEFAULT_SETTINGS.colorLayerThickness}
                         onReset={() => setSetting("colorLayerThickness", DEFAULT_SETTINGS.colorLayerThickness)}
+                        commitOnRelease
                       />
                       <p className="text-xs text-muted-foreground leading-relaxed">
                         {colorRegions.length} region{colorRegions.length === 1 ? "" : "s"} detected.
@@ -2318,6 +2323,7 @@ export default function Studio() {
                       onChange={(v) => setSetting("keycapPocketDepth", v)}
                       defaultValue={DEFAULT_SETTINGS.keycapPocketDepth}
                       onReset={() => setSetting("keycapPocketDepth", DEFAULT_SETTINGS.keycapPocketDepth)}
+                      commitOnRelease
                       {...hl(["shell_walls"])}
                     />
                     <SliderRow
@@ -2473,6 +2479,7 @@ export default function Studio() {
                         onChange={(v) => setSetting("pinHoleDepth", v)}
                         defaultValue={DEFAULT_SETTINGS.pinHoleDepth}
                         onReset={() => setSetting("pinHoleDepth", DEFAULT_SETTINGS.pinHoleDepth)}
+                        commitOnRelease
                         {...hl(["shell_pin"])}
                       />
                       <SliderRow
@@ -3038,6 +3045,89 @@ function ResetButton({
   );
 }
 
+/**
+ * Tiny debounce hook — no new dependency. Returns a stable callback that
+ * delays invoking `fn` until `delayMs` has elapsed since the last call.
+ * Re-creates the timer on each call. Cancels on unmount.
+ */
+type DebouncedFn<A extends unknown[]> = ((...args: A) => void) & {
+  /** Drop any pending invocation so it never fires. */
+  cancel: () => void;
+};
+
+function useDebouncedCallback<A extends unknown[]>(
+  fn: (...args: A) => void,
+  delayMs: number,
+): DebouncedFn<A> {
+  const fnRef = useRef(fn);
+  useEffect(() => { fnRef.current = fn; }, [fn]);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
+  return useMemo(() => {
+    const debounced = ((...args: A) => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        fnRef.current(...args);
+      }, delayMs);
+    }) as DebouncedFn<A>;
+    debounced.cancel = () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+    return debounced;
+  }, [delayMs]);
+}
+
+/**
+ * Native colour input that mirrors the chosen value locally for instant UI
+ * feedback while debouncing the (expensive) parent state update so dragging
+ * the picker no longer triggers a re-render storm.
+ */
+function DebouncedColorInput({
+  value,
+  onChange,
+  className,
+  delayMs = 80,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+  delayMs?: number;
+}) {
+  const [draft, setDraft] = useState(value);
+  // Sync local state when the parent value changes externally (e.g. SVG load,
+  // reset to defaults). Only update when not actively driving the input.
+  const draggingRef = useRef(false);
+  useEffect(() => {
+    if (!draggingRef.current) setDraft(value);
+  }, [value]);
+  const debouncedCommit = useDebouncedCallback(onChange, delayMs);
+  return (
+    <input
+      type="color"
+      value={draft}
+      onChange={(e) => {
+        draggingRef.current = true;
+        setDraft(e.target.value);
+        debouncedCommit(e.target.value);
+      }}
+      onBlur={(e) => {
+        draggingRef.current = false;
+        // Cancel any pending debounced commit first so it can't fire after
+        // (and overwrite) the immediate flush below.
+        debouncedCommit.cancel();
+        onChange(e.target.value);
+      }}
+      className={className}
+    />
+  );
+}
+
 function SliderRow({
   label,
   value,
@@ -3050,6 +3140,7 @@ function SliderRow({
   onHighlightOut,
   defaultValue,
   onReset,
+  commitOnRelease = false,
 }: {
   label: string;
   value: number;
@@ -3062,8 +3153,25 @@ function SliderRow({
   onHighlightOut?: () => void;
   defaultValue?: number;
   onReset?: () => void;
+  /**
+   * When true the slider drag updates only a local value for visual feedback
+   * and only commits to `onChange` on Radix's `onValueCommit` (pointer-up /
+   * keyup).  Use for geometry-heavy sliders so dragging doesn't rebuild
+   * `THREE.ExtrudeGeometry` 60 times a second.
+   */
+  commitOnRelease?: boolean;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
+
+  // Local mirror of the slider value for commit-on-release mode.  Synced from
+  // the parent value when not actively dragging, so external resets and
+  // typed-input commits both flow through correctly.
+  const [liveValue, setLiveValue] = useState(value);
+  const draggingRef = useRef(false);
+  useEffect(() => {
+    if (!draggingRef.current) setLiveValue(value);
+  }, [value]);
+  const displayValue = commitOnRelease ? liveValue : value;
 
   const commit = (raw: string) => {
     const n = parseFloat(raw);
@@ -3072,7 +3180,7 @@ function SliderRow({
   };
 
   const showReset = defaultValue !== undefined && onReset !== undefined;
-  const isDefault = showReset && value === defaultValue;
+  const isDefault = showReset && displayValue === defaultValue;
 
   return (
     <div onMouseEnter={onHighlightIn} onMouseLeave={onHighlightOut}>
@@ -3084,7 +3192,7 @@ function SliderRow({
             min={min}
             max={max}
             step={step}
-            value={draft ?? (value ?? 0).toFixed(2)}
+            value={draft ?? (displayValue ?? 0).toFixed(2)}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={(e) => commit(e.target.value)}
             onKeyDown={(e) => {
@@ -3115,8 +3223,21 @@ function SliderRow({
         min={min}
         max={max}
         step={step}
-        value={[value ?? min]}
-        onValueChange={([v]) => onChange(v)}
+        value={[displayValue ?? min]}
+        onValueChange={([v]) => {
+          if (commitOnRelease) {
+            draggingRef.current = true;
+            setLiveValue(v);
+          } else {
+            onChange(v);
+          }
+        }}
+        onValueCommit={([v]) => {
+          if (commitOnRelease) {
+            draggingRef.current = false;
+            onChange(v);
+          }
+        }}
       />
     </div>
   );
