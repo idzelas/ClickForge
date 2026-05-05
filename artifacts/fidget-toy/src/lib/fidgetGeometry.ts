@@ -79,7 +79,7 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   keycapPocketDepth: 10,
   insetAmount: 1.5,
   keycapSize: 14,
-  targetSizeMm: 50,
+  targetSizeMm: 70,
   lockDimension: "width",
   pinHolesEnabled: false,
   pinHoleRadius: 0.1,
