@@ -508,3 +508,106 @@ export function createCircle(centerX: number, centerY: number, radius: number): 
   shape.absarc(centerX, centerY, radius, 0, Math.PI * 2, false);
   return shape;
 }
+
+export interface SVGCompatibilityIssue {
+  title: string;
+  description: string;
+  blocking: boolean;
+}
+
+/**
+ * Analyse an SVG string for elements and patterns that are known to cause
+ * incorrect or empty 3D geometry in the fidget-toy pipeline. Returns an array
+ * of issues — empty means the file looks clean.
+ */
+export function analyzeSVG(svgContent: string): SVGCompatibilityIssue[] {
+  const issues: SVGCompatibilityIssue[] = [];
+  const doc = new DOMParser().parseFromString(svgContent, "image/svg+xml");
+
+  if (doc.querySelector("parsererror")) {
+    issues.push({
+      title: "File could not be read",
+      description: "This SVG file appears to be damaged or is not a valid SVG. Try re-exporting it from your design tool.",
+      blocking: true,
+    });
+    return issues;
+  }
+
+  for (const el of Array.from(doc.querySelectorAll("polygon"))) {
+    const pts = (el.getAttribute("points") ?? "")
+      .trim().split(/[\s,]+/).map(Number).filter(n => !isNaN(n));
+    if (pts.length < 6) continue;
+    let area = 0;
+    for (let i = 0; i < pts.length; i += 2) {
+      const j = (i + 2) % pts.length;
+      area += pts[i] * pts[j + 1] - pts[j] * pts[i + 1];
+    }
+    if (area > 0) {
+      issues.push({
+        title: "Shape winding issue",
+        description: "This file contains a polygon shape whose points are listed in an order that can confuse the 3D converter. The shape may appear as the wrong number of sides or have a chunk missing.",
+        blocking: true,
+      });
+      break;
+    }
+  }
+
+  if (doc.querySelector("use")) {
+    issues.push({
+      title: "Icon reference elements detected",
+      description: "This SVG uses a shortcut technique (called 'use' or 'symbol') common in icon libraries. It may not convert correctly and could produce an empty or partial shape.",
+      blocking: true,
+    });
+  }
+
+  if (doc.querySelector("text, tspan, textPath")) {
+    issues.push({
+      title: "Text elements detected",
+      description: "This SVG contains text, which cannot be converted to 3D geometry. The text will be ignored. If you want text in your design, convert it to outlines in your design tool before uploading.",
+      blocking: false,
+    });
+  }
+
+  if (doc.querySelector("image")) {
+    issues.push({
+      title: "Embedded image detected",
+      description: "This SVG contains an embedded photo or image, which will be ignored during 3D conversion. Only the vector shapes will be used.",
+      blocking: false,
+    });
+  }
+
+  if (doc.querySelector("clipPath, mask")) {
+    issues.push({
+      title: "Clipping or masking detected",
+      description: "This SVG uses clipping or masking to hide parts of the design. Those hidden areas will still appear in the 3D model because the 3D converter ignores clip boundaries.",
+      blocking: false,
+    });
+  }
+
+  if (doc.querySelector("polyline")) {
+    issues.push({
+      title: "Open path detected",
+      description: "This SVG contains an open line shape (polyline) with no filled area. It will be treated as a closed filled shape, which may not match the original design.",
+      blocking: false,
+    });
+  }
+
+  const allShapes = Array.from(doc.querySelectorAll("path, rect, circle, ellipse, polygon, polyline"));
+  const hasAnyFill = allShapes.some(el => {
+    const fill = el.getAttribute("fill") ?? "";
+    const style = el.getAttribute("style") ?? "";
+    const cls = el.getAttribute("class") ?? "";
+    const inlineFillNone = fill === "none" || fill === "transparent";
+    const styleFillNone = /fill\s*:\s*(none|transparent)/.test(style);
+    return cls !== "" || (!inlineFillNone && !styleFillNone);
+  });
+  if (allShapes.length === 0 || !hasAnyFill) {
+    issues.push({
+      title: "No filled shapes found",
+      description: "This SVG does not appear to contain any solid filled shapes. It may be a stroke-only outline, which will not produce usable 3D geometry.",
+      blocking: true,
+    });
+  }
+
+  return issues;
+}

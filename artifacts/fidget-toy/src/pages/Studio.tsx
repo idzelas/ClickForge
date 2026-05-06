@@ -38,7 +38,8 @@ import {
   type FidgetSettingsBlob,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { parseSVGContent, parseSVGColorRegions, extractSvgColor } from "@/lib/svgParser";
+import { parseSVGContent, parseSVGColorRegions, extractSvgColor, analyzeSVG } from "@/lib/svgParser";
+import type { SVGCompatibilityIssue } from "@/lib/svgParser";
 import LibraryPickerPanel from "@/components/LibraryPickerPanel";
 import { consumePendingLibrarySvg } from "@/lib/librarySession";
 import BananaMesh from "@/components/BananaMesh";
@@ -1364,6 +1365,9 @@ export default function Studio() {
   // so the per-mesh `i * 0.01` preview z-bump stays preview-only.
   const colorLayersGroupRef = useRef<THREE.Group | null>(null);
   const [stlColorWarnOpen, setStlColorWarnOpen] = useState(false);
+  const [svgWarningOpen, setSvgWarningOpen] = useState(false);
+  const [svgWarningIssues, setSvgWarningIssues] = useState<SVGCompatibilityIssue[]>([]);
+  const [pendingSvgFile, setPendingSvgFile] = useState<{ content: string; fileName: string } | null>(null);
 
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
@@ -1516,7 +1520,17 @@ export default function Studio() {
   const dispatchFile = (file: File) => {
     if (file.name.toLowerCase().endsWith(".svg") || file.type === "image/svg+xml") {
       const reader = new FileReader();
-      reader.onload = (ev) => handleSVGLoad(ev.target?.result as string, file.name);
+      reader.onload = (ev) => {
+        const content = ev.target?.result as string;
+        const issues = analyzeSVG(content);
+        if (issues.length > 0) {
+          setPendingSvgFile({ content, fileName: file.name });
+          setSvgWarningIssues(issues);
+          setSvgWarningOpen(true);
+        } else {
+          handleSVGLoad(content, file.name);
+        }
+      };
       reader.readAsText(file);
     } else if (RASTER_TYPES.includes(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name)) {
       toast({
@@ -3060,6 +3074,55 @@ export default function Studio() {
         onClose={() => setLibraryPickerOpen(false)}
         onPick={handleLibraryPick}
       />
+
+      {/* SVG compatibility warning modal */}
+      <AlertDialog open={svgWarningOpen} onOpenChange={setSvgWarningOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>This file may not convert correctly</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  We found {svgWarningIssues.length === 1 ? "a potential issue" : "some potential issues"} with this SVG file that {svgWarningIssues.some(i => i.blocking) ? "may cause incorrect 3D geometry" : "are worth knowing about"}:
+                </p>
+                <ul className="space-y-2">
+                  {svgWarningIssues.map((issue, idx) => (
+                    <li key={idx} className="rounded-md border p-3 text-sm">
+                      <span className="font-medium">{issue.title}</span>
+                      <p className="mt-1 text-muted-foreground">{issue.description}</p>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-sm text-muted-foreground">
+                  You can still try loading it — it might work fine. Or go back and try a different file.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setPendingSvgFile(null);
+                setSvgWarningIssues([]);
+              }}
+            >
+              Go back
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingSvgFile) {
+                  handleSVGLoad(pendingSvgFile.content, pendingSvgFile.fileName);
+                }
+                setPendingSvgFile(null);
+                setSvgWarningIssues([]);
+                setSvgWarningOpen(false);
+              }}
+            >
+              Load anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* STL color-loss warning — STL has no concept of color, so per-region
           slabs are dropped and only the merged shell + clicker bodies survive.
