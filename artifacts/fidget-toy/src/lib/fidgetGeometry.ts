@@ -901,9 +901,17 @@ function cloneShape(shape: THREE.Shape): THREE.Shape {
  * walls section by a hair and eliminates the coincident-face slicer gap.
  */
 function expandShapeOutward(shape: THREE.Shape, amountMm: number): THREE.Shape {
-  // Sample the boundary and strip the closing duplicate
+  // Sample the boundary and strip the closing duplicate only when the last
+  // point is actually a duplicate of the first (autoClose=true shapes from
+  // SVGLoader).  Shapes built via setFromPoints() have autoClose=false and
+  // getPoints() returns exactly N distinct vertices — stripping
+  // unconditionally would remove a real corner and produce a missing facet.
   const raw = shape.getPoints(128);
-  let pts = raw.slice(0, raw.length - 1);
+  const first = raw[0];
+  const last  = raw[raw.length - 1];
+  let pts = (first && last && last.distanceTo(first) < 1e-6)
+    ? raw.slice(0, -1)
+    : raw;
   if (pts.length < 3) return shape;
 
   const n = pts.length;

@@ -1501,6 +1501,9 @@ export default function Studio() {
           title: "SVG loaded",
           description: `${parsed.shapes.length} shape(s) · ${parsed.width.toFixed(0)}×${parsed.height.toFixed(0)} px`,
         });
+        for (const warning of parsed.warnings) {
+          toast({ title: "SVG Warning", description: warning, variant: "destructive" });
+        }
       } catch {
         toast({ title: "Failed to parse SVG", variant: "destructive" });
       }

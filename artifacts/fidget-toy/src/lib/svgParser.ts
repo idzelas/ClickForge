@@ -75,12 +75,108 @@ function wrapAndReframe(
   svgEl.removeAttribute("height");
 }
 
-/** Run SVGLoader on a serialized SVG string and return all shapes. */
+/**
+ * Inline all <use> elements by replacing them with a deep clone of the
+ * element they reference. Handles both local (#id) and same-document hrefs.
+ * After this pass SVGLoader never sees a <use> element, so icon-library SVGs
+ * that rely on <symbol> + <use> patterns parse correctly.
+ */
+function inlineUseElements(doc: Document): void {
+  const uses = Array.from(doc.querySelectorAll("use"));
+  for (const use of uses) {
+    const href =
+      use.getAttribute("href") ?? use.getAttribute("xlink:href") ?? "";
+    if (!href.startsWith("#")) continue; // external refs — skip
+    const target = doc.getElementById(href.slice(1));
+    if (!target) continue;
+
+    const clone = target.cloneNode(true) as Element;
+
+    // If the target is a <symbol>, replace it with a <g> so SVGLoader
+    // processes its children as normal drawable elements.
+    if (clone.tagName.toLowerCase() === "symbol") {
+      const NS = "http://www.w3.org/2000/svg";
+      const g = doc.createElementNS(NS, "g");
+      while (clone.firstChild) g.appendChild(clone.firstChild);
+      // Copy presentation attributes from the <use> element (x, y, transform)
+      for (const attr of Array.from(use.attributes)) {
+        if (!["href", "xlink:href", "width", "height"].includes(attr.name)) {
+          g.setAttribute(attr.name, attr.value);
+        }
+      }
+      use.parentElement?.replaceChild(g, use);
+    } else {
+      // Copy position/transform from <use> onto the clone
+      for (const attr of Array.from(use.attributes)) {
+        if (!["href", "xlink:href"].includes(attr.name)) {
+          clone.setAttribute(attr.name, attr.value);
+        }
+      }
+      use.parentElement?.replaceChild(clone, use);
+    }
+  }
+}
+
+/**
+ * Convert <polyline> elements to <polygon> by ensuring the point list forms
+ * a closed shape. SVGLoader treats <polygon> as a closed filled path;
+ * <polyline> is open and produces no geometry. Since users uploading a
+ * polyline almost always intend a filled shape, closing it is the right
+ * default.
+ */
+function closePolylines(doc: Document): void {
+  for (const el of Array.from(doc.querySelectorAll("polyline"))) {
+    const NS = "http://www.w3.org/2000/svg";
+    const polygon = doc.createElementNS(NS, "polygon");
+    for (const attr of Array.from(el.attributes)) {
+      polygon.setAttribute(attr.name, attr.value);
+    }
+    el.parentElement?.replaceChild(polygon, el);
+  }
+}
+
+/**
+ * Run SVGLoader on a serialized SVG string and return all shapes.
+ * Holes added by SVGLoader's winding-detection heuristic are stripped —
+ * the outer-shell silhouette pipeline never uses holes; legitimate cut-outs
+ * are handled separately via parseSVGColorRegions.
+ * Shapes are sorted descending by filled area so the largest body is [0],
+ * preventing a stroke-only outline path at the front of the document from
+ * being picked as the shell/clicker silhouette.
+ */
 function parseSvgString(svg: string): THREE.Shape[] {
   const loader = new SVGLoader();
   const data   = loader.parse(svg);
   const shapes: THREE.Shape[] = [];
-  for (const path of data.paths) shapes.push(...SVGLoader.createShapes(path));
+  for (const path of data.paths) {
+    const created = SVGLoader.createShapes(path);
+    for (const shape of created) {
+      // SVGLoader sometimes adds a polygon's own subpath as a hole when
+      // winding detection misfires (particularly for <polygon> elements whose
+      // ShapePath lacks autoClose). Strip all parser-imposed holes — the outer
+      // shell silhouette pipeline never uses holes; legitimate cut-outs are
+      // handled separately via parseSVGColorRegions.
+      shape.holes = [];
+      shapes.push(shape);
+    }
+  }
+
+  // Sort descending by polygon area so the largest filled body is always [0].
+  // This prevents a stroke-only outline path that appears first in document
+  // order from being picked as the shell/clicker silhouette.
+  shapes.sort((a, b) => {
+    const areaOf = (s: THREE.Shape) => {
+      const pts = s.getPoints(64);
+      let area = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const j = (i + 1) % pts.length;
+        area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+      }
+      return Math.abs(area / 2);
+    };
+    return areaOf(b) - areaOf(a);
+  });
+
   return shapes;
 }
 
@@ -96,43 +192,6 @@ function shapeBounds(shapes: THREE.Shape[]): { minX: number; minY: number; w: nu
     }
   }
   return isFinite(minX) ? { minX, minY, w: maxX - minX, h: maxY - minY } : null;
-}
-
-/**
- * Convert <polygon> and <polyline> elements to equivalent <path> elements
- * so SVGLoader receives a consistent element type and normalizes winding
- * the same way it does for <path>-based SVGs.
- */
-function convertPolygonsToPath(doc: Document): void {
-  const NS = "http://www.w3.org/2000/svg";
-  for (const tag of ["polygon", "polyline"]) {
-    for (const el of Array.from(doc.querySelectorAll(tag))) {
-      const pointsAttr = el.getAttribute("points") ?? "";
-      const nums = pointsAttr.trim().split(/[\s,]+/).map(Number).filter(n => !isNaN(n));
-      if (nums.length < 4) continue;
-
-      const coords: [number, number][] = [];
-      for (let i = 0; i + 1 < nums.length; i += 2) {
-        coords.push([nums[i], nums[i + 1]]);
-      }
-
-      const d =
-        `M ${coords[0][0]} ${coords[0][1]} ` +
-        coords.slice(1).map(([x, y]) => `L ${x} ${y}`).join(" ") +
-        (tag === "polygon" ? " Z" : "");
-
-      const path = doc.createElementNS(NS, "path");
-      path.setAttribute("d", d);
-
-      for (const attr of Array.from(el.attributes)) {
-        if (attr.name !== "points") {
-          path.setAttribute(attr.name, attr.value);
-        }
-      }
-
-      el.parentElement?.replaceChild(path, el);
-    }
-  }
 }
 
 /**
@@ -155,8 +214,11 @@ function normalizeSvgForParsing(svgContent: string): { svg: string; width: numbe
     }
   }
 
-  // Convert <polygon>/<polyline> to <path> for consistent SVGLoader winding behaviour
-  convertPolygonsToPath(doc);
+  // Inline <use>/<symbol> references so SVGLoader sees concrete elements
+  inlineUseElements(doc);
+
+  // Close open <polyline> elements into filled <polygon> shapes
+  closePolylines(doc);
 
   let vbX = 0, vbY = 0, vbW = 100, vbH = 100;
   if (svgEl) {
@@ -201,10 +263,27 @@ function normalizeSvgForParsing(svgContent: string): { svg: string; width: numbe
   return { svg: pass2Svg, width: tightW, height: tightH };
 }
 
-export function parseSVGContent(svgContent: string): ParsedSVG {
+export function parseSVGContent(svgContent: string): ParsedSVG & { warnings: string[] } {
+  const warnings: string[] = [];
+
+  // Detect unsupported elements and warn
+  const domParser = new DOMParser();
+  const doc = domParser.parseFromString(svgContent, "image/svg+xml");
+  if (doc.querySelector("text, tspan, textPath")) {
+    warnings.push(
+      "This SVG contains text elements, which are not supported and will be ignored. " +
+      "To include text in your design, convert it to outlines in your SVG editor first."
+    );
+  }
+  if (doc.querySelector("image")) {
+    warnings.push(
+      "This SVG contains an embedded image, which is not supported and will be ignored."
+    );
+  }
+
   const { svg, width, height } = normalizeSvgForParsing(svgContent);
   const shapes = parseSvgString(svg);
-  return { shapes, width, height };
+  return { shapes, width, height, warnings };
 }
 
 /**
