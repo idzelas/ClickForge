@@ -2790,7 +2790,7 @@ export default function Studio() {
         </aside>
 
         {/* ── 3D canvas ── */}
-        <main className="flex-1 relative">
+        <main className="flex-1 relative z-0 isolate">
           {!svgState && (
             <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
               <Box className="h-12 w-12 text-muted-foreground/30 mb-3" />
