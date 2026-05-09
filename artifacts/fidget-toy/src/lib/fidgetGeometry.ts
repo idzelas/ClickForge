@@ -343,10 +343,7 @@ export function createOuterShellGeometries(
     // Clicker mode: SVG = clicker body.
     // Shell inner (pocket) = SVG expanded outward by CLEARANCE so the clicker fits.
     // Shell outer = pocket expanded outward by insetAmount (wall thickness).
-    innerShape =
-      offsetShapeOutward(svgShape, CLEARANCE) ??
-      offsetShapeOutward(svgShape, Math.min(CLEARANCE, 0.3)) ??
-      cloneShape(svgShape);
+    innerShape = expandShapeOutward(cloneShape(svgShape), CLEARANCE);
     const shellExpand = insetAmount;
     outerShape =
       offsetShapeOutward(innerShape, shellExpand) ??
