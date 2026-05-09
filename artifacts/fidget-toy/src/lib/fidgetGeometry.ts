@@ -358,6 +358,9 @@ export function createOuterShellGeometries(
       offsetShapeInward(outerShape, Math.min(insetAmount, 0.8)) ??
       offsetShapeInward(outerShape, 0.3) ??
       cloneShape(outerShape);
+    // Smooth residual micro-spikes left by self-intersection removal with a
+    // tiny outset — imperceptible on wall thickness but cleans degenerate edges.
+    innerShape = expandShapeOutward(cloneShape(innerShape), 0.05) ?? innerShape;
   }
 
   // ── 1. Outer wall ring ──────────────────────────────────────────────────

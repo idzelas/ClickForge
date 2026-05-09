@@ -157,7 +157,7 @@ function computeRawOutwardOffset(
 export function insetPolygon(
   points: THREE.Vector2[],
   offsetMm: number,
-  miterLimit = 4
+  miterLimit = 2
 ): THREE.Vector2[][] {
   if (points.length < 3 || offsetMm <= 0) return [];
 
