@@ -1977,7 +1977,7 @@ export default function Studio() {
                   </div>
                   <div className="flex-1">
                     <Label className="text-xs text-muted-foreground mb-1 block">
-                      Size (mm)
+                      {(settings.svgIsClickerShape ?? false) ? "Clicker size (mm)" : "Size (mm)"}
                     </Label>
                     <Input
                       type="number"
@@ -2207,7 +2207,7 @@ export default function Studio() {
                   </span>
                 </div>
                 <SliderRow
-                  label="Wall thickness"
+                  label={(settings.svgIsClickerShape ?? false) ? "Shell gap" : "Wall thickness"}
                   value={settings.insetAmount}
                   min={0.5}
                   max={5}

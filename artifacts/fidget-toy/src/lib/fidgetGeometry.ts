@@ -450,10 +450,6 @@ export function createOuterShellGeometries(
     innerFillHousingCapGeo = extrudeShape(capShape, housingCapDepth, "shell/housingCap", shellStats);
   }
 
-  console.log("[fidget-geo] SHELL", shellStats.map(s =>
-    `${s.label}:${s.nanCount + s.spikeCount > 0 ? "SPIKE!" : "ok"} v=${s.verts} maxXY=(${s.maxX.toFixed(1)},${s.maxY.toFixed(1)})${s.firstSpike ? " first="+s.firstSpike : ""}`
-  ).join(" | "));
-
   const housingDepth = shellSolidFloor + shellSwitchHousing;
   return {
     outerWall: outerWallGeo,
@@ -1105,72 +1101,119 @@ export function validateGeometry(
   const keycapSize        = settings.keycapSize        ?? DEFAULT_SETTINGS.keycapSize;
   const clickerSquareSize = settings.clickerSquareSize ?? DEFAULT_SETTINGS.clickerSquareSize;
   const bossDiameter      = settings.bossDiameter      ?? DEFAULT_SETTINGS.bossDiameter;
-  const CLEARANCE = settings.clearanceMm ?? DEFAULT_SETTINGS.clearanceMm;
+  const CLEARANCE         = settings.clearanceMm       ?? DEFAULT_SETTINGS.clearanceMm;
+  const svgIsClickerShape = settings.svgIsClickerShape ?? false;
 
-  // ── Step 1: shell outer → shell inner ────────────────────────────────────
-  // Keep nullable — a null means the shape collapses at this wall thickness,
-  // which is itself a fatal geometry problem. Never fall back to the outer
-  // shape for the bbox check; that would mask the failure.
-  const shellOuter = transformToMm(baseShape, scale, svgWidth, svgHeight, settings.mirrorShell ?? false);
-  const shellInner: THREE.Shape | null =
-    offsetShapeInward(shellOuter, insetAmount) ??
-    offsetShapeInward(shellOuter, Math.min(insetAmount, 0.8)) ??
-    offsetShapeInward(shellOuter, 0.3);
+  const svgMm = transformToMm(baseShape, scale, svgWidth, svgHeight, settings.mirrorShell ?? false);
 
-  const { w: shellW, h: shellH } = shellInner
-    ? boundingBoxMm(shellInner)
-    : { w: 0, h: 0 };
+  if (svgIsClickerShape) {
+    // ── Clicker mode geometry chain ─────────────────────────────────────────
+    // SVG = clicker body = shell inner boundary.
+    // Shell outer = SVG expanded outward by (insetAmount + CLEARANCE).
+    // Keycap pocket is cut into the shell interior (= SVG boundary).
+    // Switch cavity is cut into the clicker body (= SVG boundary).
+    const { w: svgW, h: svgH } = boundingBoxMm(svgMm);
 
-  if (shellW < keycapSize || shellH < keycapSize) {
-    warnings.push({
-      part: "shell",
-      severity: "error",
-      message: shellInner
-        ? `Shell interior is ${shellW.toFixed(1)} × ${shellH.toFixed(1)} mm — ` +
+    // Step 1: keycap pocket must fit inside the shell interior (= SVG).
+    if (svgW < keycapSize || svgH < keycapSize) {
+      warnings.push({
+        part: "shell",
+        severity: "error",
+        message:
+          `Shell interior is ${svgW.toFixed(1)} × ${svgH.toFixed(1)} mm — ` +
           `too small for the ${keycapSize} × ${keycapSize} mm keycap pocket. ` +
-          `Increase model size or reduce "Keycap square".`
-        : `Shell interior collapses at the current wall thickness — ` +
-          `too small for the ${keycapSize} × ${keycapSize} mm keycap pocket. ` +
-          `Increase model size.`,
-    });
-  }
+          `Increase clicker size or reduce "Keycap square".`,
+      });
+    }
 
-  // ── Step 2: shell inner → clicker body (deflate by print clearance) ──────
-  // The clicker is physically derived from the shell's inner cavity, NOT
-  // independently from the outer SVG. Derive it the same way: take shellInner
-  // and shrink it by CLEARANCE so the clicker slides in without binding.
-  // If shellInner is null the clicker has no space at all — treat as zero.
-  const clickerBody: THREE.Shape | null = shellInner
-    ? (offsetShapeInward(shellInner, CLEARANCE) ?? cloneShape(shellInner))
-    : null;
-
-  const { w: clickerW, h: clickerH } = clickerBody
-    ? boundingBoxMm(clickerBody)
-    : { w: 0, h: 0 };
-
-  if (clickerW < clickerSquareSize || clickerH < clickerSquareSize) {
-    warnings.push({
-      part: "clicker",
-      severity: "error",
-      message: clickerBody
-        ? `Clicker body is ${clickerW.toFixed(1)} × ${clickerH.toFixed(1)} mm — ` +
+    // Step 2: switch cavity must fit inside the clicker body (= SVG).
+    if (svgW < clickerSquareSize || svgH < clickerSquareSize) {
+      warnings.push({
+        part: "clicker",
+        severity: "error",
+        message:
+          `Clicker body is ${svgW.toFixed(1)} × ${svgH.toFixed(1)} mm — ` +
           `too small for the ${clickerSquareSize} × ${clickerSquareSize} mm switch cavity. ` +
-          `Increase model size or reduce "Switch cavity size".`
-        : `Model is too small — clicker body cannot hold the ` +
-          `${clickerSquareSize} × ${clickerSquareSize} mm switch cavity. ` +
-          `Increase model size.`,
-    });
-  }
+          `Increase clicker size or reduce "Switch cavity size".`,
+      });
+    }
 
-  // ── Step 3: boss diameter vs switch cavity ────────────────────────────────
-  if (bossDiameter > clickerSquareSize) {
-    warnings.push({
-      part: "clicker",
-      severity: "error",
-      message:
-        `Boss diameter (${bossDiameter.toFixed(2)} mm) exceeds the switch cavity ` +
-        `(${clickerSquareSize} × ${clickerSquareSize} mm). Reduce "Boss diameter".`,
-    });
+    // Step 3: boss diameter vs switch cavity (mode-independent).
+    if (bossDiameter > clickerSquareSize) {
+      warnings.push({
+        part: "clicker",
+        severity: "error",
+        message:
+          `Boss diameter (${bossDiameter.toFixed(2)} mm) exceeds the switch cavity ` +
+          `(${clickerSquareSize} × ${clickerSquareSize} mm). Reduce "Boss diameter".`,
+      });
+    }
+  } else {
+    // ── Normal mode geometry chain ──────────────────────────────────────────
+    // SVG = outer shell wall.
+    // Shell inner = SVG inset by insetAmount (the pocket boundary).
+    // Clicker body = shell inner deflated by CLEARANCE (slides into shell).
+
+    // Step 1: shell outer → shell inner.
+    // Keep nullable — collapse at this wall thickness is itself a fatal error.
+    const shellInner: THREE.Shape | null =
+      offsetShapeInward(svgMm, insetAmount) ??
+      offsetShapeInward(svgMm, Math.min(insetAmount, 0.8)) ??
+      offsetShapeInward(svgMm, 0.3);
+
+    const { w: shellW, h: shellH } = shellInner
+      ? boundingBoxMm(shellInner)
+      : { w: 0, h: 0 };
+
+    if (shellW < keycapSize || shellH < keycapSize) {
+      warnings.push({
+        part: "shell",
+        severity: "error",
+        message: shellInner
+          ? `Shell interior is ${shellW.toFixed(1)} × ${shellH.toFixed(1)} mm — ` +
+            `too small for the ${keycapSize} × ${keycapSize} mm keycap pocket. ` +
+            `Increase model size or reduce "Keycap square".`
+          : `Shell interior collapses at the current wall thickness — ` +
+            `too small for the ${keycapSize} × ${keycapSize} mm keycap pocket. ` +
+            `Increase model size.`,
+      });
+    }
+
+    // Step 2: shell inner → clicker body (deflate by print clearance).
+    // The clicker is physically derived from the shell's inner cavity.
+    // If shellInner is null the clicker has no space — treat as zero.
+    const clickerBody: THREE.Shape | null = shellInner
+      ? (offsetShapeInward(shellInner, CLEARANCE) ?? cloneShape(shellInner))
+      : null;
+
+    const { w: clickerW, h: clickerH } = clickerBody
+      ? boundingBoxMm(clickerBody)
+      : { w: 0, h: 0 };
+
+    if (clickerW < clickerSquareSize || clickerH < clickerSquareSize) {
+      warnings.push({
+        part: "clicker",
+        severity: "error",
+        message: clickerBody
+          ? `Clicker body is ${clickerW.toFixed(1)} × ${clickerH.toFixed(1)} mm — ` +
+            `too small for the ${clickerSquareSize} × ${clickerSquareSize} mm switch cavity. ` +
+            `Increase model size or reduce "Switch cavity size".`
+          : `Model is too small — clicker body cannot hold the ` +
+            `${clickerSquareSize} × ${clickerSquareSize} mm switch cavity. ` +
+            `Increase model size.`,
+      });
+    }
+
+    // Step 3: boss diameter vs switch cavity.
+    if (bossDiameter > clickerSquareSize) {
+      warnings.push({
+        part: "clicker",
+        severity: "error",
+        message:
+          `Boss diameter (${bossDiameter.toFixed(2)} mm) exceeds the switch cavity ` +
+          `(${clickerSquareSize} × ${clickerSquareSize} mm). Reduce "Boss diameter".`,
+      });
+    }
   }
 
   return warnings;
