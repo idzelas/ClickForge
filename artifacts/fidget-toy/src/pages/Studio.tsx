@@ -2207,7 +2207,7 @@ export default function Studio() {
                   </span>
                 </div>
                 <SliderRow
-                  label={(settings.svgIsClickerShape ?? false) ? "Shell gap" : "Wall thickness"}
+                  label="Wall thickness"
                   value={settings.insetAmount}
                   min={0.5}
                   max={5}

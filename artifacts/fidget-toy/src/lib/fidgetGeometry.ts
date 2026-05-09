@@ -340,9 +340,14 @@ export function createOuterShellGeometries(
   let innerShape: THREE.Shape;
 
   if (svgIsClickerShape) {
-    // Keep the clicker outline exactly on the locked SVG scale.
-    innerShape = cloneShape(svgShape);
-    const shellExpand = insetAmount + CLEARANCE;
+    // Clicker mode: SVG = clicker body.
+    // Shell inner (pocket) = SVG expanded outward by CLEARANCE so the clicker fits.
+    // Shell outer = pocket expanded outward by insetAmount (wall thickness).
+    innerShape =
+      offsetShapeOutward(svgShape, CLEARANCE) ??
+      offsetShapeOutward(svgShape, Math.min(CLEARANCE, 0.3)) ??
+      cloneShape(svgShape);
+    const shellExpand = insetAmount;
     outerShape =
       offsetShapeOutward(innerShape, shellExpand) ??
       offsetShapeOutward(innerShape, Math.min(shellExpand, 0.8)) ??
@@ -1108,8 +1113,8 @@ export function validateGeometry(
 
   if (svgIsClickerShape) {
     // ── Clicker mode geometry chain ─────────────────────────────────────────
-    // SVG = clicker body = shell inner boundary.
-    // Shell outer = SVG expanded outward by (insetAmount + CLEARANCE).
+    // SVG = clicker body; shell inner (pocket) = SVG expanded outward by CLEARANCE.
+    // Shell outer = pocket expanded outward by insetAmount (wall thickness).
     // Keycap pocket is cut into the shell interior (= SVG boundary).
     // Switch cavity is cut into the clicker body (= SVG boundary).
     const { w: svgW, h: svgH } = boundingBoxMm(svgMm);
