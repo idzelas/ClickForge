@@ -2264,7 +2264,7 @@ export default function Studio() {
                       label="Thickness (Z)"
                       value={settings.keyRingThickness ?? DEFAULT_SETTINGS.keyRingThickness}
                       min={0.5}
-                      max={Math.max(0.5, settings.shellSolidFloor ?? DEFAULT_SETTINGS.shellSolidFloor)}
+                      max={5}
                       step={0.1}
                       unit="mm"
                       onChange={(v) => setSetting("keyRingThickness", v)}
