@@ -330,10 +330,10 @@ export function createOuterShellGeometries(
 
   // ── Derive outer + inner wall boundaries ────────────────────────────────
   // SVG = clicker body. Pocket = SVG + clearance. Outer wall = pocket + wall thickness.
-  const innerShape = expandShapeOutward(cloneShape(svgShape), CLEARANCE);
-  const outerShape =
-    offsetShapeOutward(innerShape, insetAmount) ??
-    expandShapeOutward(cloneShape(innerShape), insetAmount);
+  // Use Clipper-based offsetShapeOutward for both steps — it correctly handles the
+  // CW winding that transformToMm produces (SVGLoader CCW-in-Y-down → CW-in-Y-up).
+  const innerShape = offsetShapeOutward(cloneShape(svgShape), CLEARANCE) ?? cloneShape(svgShape);
+  const outerShape = offsetShapeOutward(innerShape, insetAmount) ?? cloneShape(innerShape);
 
   // ── 1. Outer wall ring ──────────────────────────────────────────────────
   const ringShape = cloneShape(outerShape);
@@ -885,6 +885,16 @@ function expandShapeOutward(shape: THREE.Shape, amountMm: number): THREE.Shape {
   // Compute outward-shifted parallel edges (for CCW polygon, outward normal of
   // edge a→b is (+ey, -ex)/|e|, the opposite of the inward normal used by insetPolygon)
   interface ShiftedEdge { px: number; py: number; dx: number; dy: number }
+  // Detect winding: positive signed area = CCW (Y-up), negative = CW.
+  // Shapes from transformToMm are CW (SVGLoader CCW-in-Y-down → CW-in-Y-up after Y-negation).
+  // Outward normal: right perpendicular (+ey, -ex) for CCW; left (-ey, +ex) for CW.
+  let winding = 0;
+  for (let i = 0; i < n; i++) {
+    const q = pts[(i + 1) % n];
+    winding += pts[i].x * q.y - q.x * pts[i].y;
+  }
+  const isCCW = winding > 0;
+
   const edges: ShiftedEdge[] = [];
   for (let i = 0; i < n; i++) {
     const a = pts[i];
@@ -892,9 +902,8 @@ function expandShapeOutward(shape: THREE.Shape, amountMm: number): THREE.Shape {
     const ex = b.x - a.x, ey = b.y - a.y;
     const len = Math.hypot(ex, ey);
     if (len < 1e-10) continue;
-    // Outward normal for CCW: (+ey, -ex) / len
-    const nx =  ey / len;
-    const ny = -ex / len;
+    const nx = isCCW ?  ey / len : -ey / len;
+    const ny = isCCW ? -ex / len :  ex / len;
     edges.push({ px: a.x + nx * amountMm, py: a.y + ny * amountMm, dx: ex / len, dy: ey / len });
   }
 
