@@ -49,6 +49,8 @@ export interface FidgetSettings {
   keyRingOuterDiameter: number; // mm, e.g. 10
   keyRingHoleDiameter: number;  // mm, e.g. 5
   keyRingThickness: number;     // mm, lug Z thickness (aligned to bottom), e.g. 1
+  keyRingNudgeX: number;        // mm, horizontal offset from centre, e.g. 0
+  keyRingNudgeY: number;        // mm, vertical offset from top-centre default, e.g. 0
   // Color region flat bodies — thickness of each per-color extruded slab,
   // sitting flush with the bottom face of the outer shell (z=0 upward).
   colorLayerThickness: number;
@@ -104,6 +106,8 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   keyRingOuterDiameter: 10,
   keyRingHoleDiameter: 5,
   keyRingThickness: 1,
+  keyRingNudgeX: 0,
+  keyRingNudgeY: 0,
   colorLayerThickness: 0.4,
   swapCutouts: false,
 };
@@ -262,6 +266,7 @@ export function getKeyRingSig(s: FidgetSettings): string {
   return [
     s.keyRingEnabled, s.keyRingOuterDiameter,
     s.keyRingHoleDiameter, s.keyRingThickness,
+    s.keyRingNudgeX ?? 0, s.keyRingNudgeY ?? 0,
   ].join("|");
 }
 
@@ -508,9 +513,12 @@ export function createKeyRingGeometry(
     bevelEnabled: false,
   });
 
+  const nudgeX = settings.keyRingNudgeX ?? 0;
+  const nudgeY = settings.keyRingNudgeY ?? 0;
+
   return {
     geometry,
-    position: { x: 0, y: outerShellBounds.h / 2 },
+    position: { x: nudgeX, y: outerShellBounds.h / 2 + nudgeY },
   };
 }
 

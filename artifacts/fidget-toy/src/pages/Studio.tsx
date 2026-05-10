@@ -2272,8 +2272,32 @@ export default function Studio() {
                       defaultValue={DEFAULT_SETTINGS.keyRingThickness}
                       onReset={() => setSetting("keyRingThickness", DEFAULT_SETTINGS.keyRingThickness)}
                     />
+                    <SliderRow
+                      label="Nudge X"
+                      value={settings.keyRingNudgeX ?? DEFAULT_SETTINGS.keyRingNudgeX}
+                      min={-20}
+                      max={20}
+                      step={0.5}
+                      unit="mm"
+                      onChange={(v) => setSetting("keyRingNudgeX", v)}
+                      commitOnRelease
+                      defaultValue={DEFAULT_SETTINGS.keyRingNudgeX}
+                      onReset={() => setSetting("keyRingNudgeX", DEFAULT_SETTINGS.keyRingNudgeX)}
+                    />
+                    <SliderRow
+                      label="Nudge Y"
+                      value={settings.keyRingNudgeY ?? DEFAULT_SETTINGS.keyRingNudgeY}
+                      min={-20}
+                      max={20}
+                      step={0.5}
+                      unit="mm"
+                      onChange={(v) => setSetting("keyRingNudgeY", v)}
+                      commitOnRelease
+                      defaultValue={DEFAULT_SETTINGS.keyRingNudgeY}
+                      onReset={() => setSetting("keyRingNudgeY", DEFAULT_SETTINGS.keyRingNudgeY)}
+                    />
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      Lug sits flush with the bottom of the shell and stays within the solid floor so it never blocks the inner clicker pocket.
+                      Lug sits flush with the bottom of the shell. Use Nudge X/Y to shift it left/right or in/out from the default top-centre position.
                     </p>
                   </div>
                 )}
