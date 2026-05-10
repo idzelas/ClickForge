@@ -72,9 +72,9 @@ export interface FidgetSettings {
 }
 
 export const DEFAULT_SETTINGS: FidgetSettings = {
-  shellSolidFloor: 2,
+  shellSolidFloor: 1,
   shellSwitchHousing: 10,
-  shellWallExtension: 10,
+  shellWallExtension: 8,
   keycapPocketDepth: 10,
   insetAmount: 1,
   keycapSize: 14,
