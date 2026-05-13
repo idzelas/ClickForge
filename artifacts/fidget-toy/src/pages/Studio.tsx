@@ -2337,7 +2337,7 @@ export default function Studio() {
                       onReset={() => setSetting("keyRingNudgeY", DEFAULT_SETTINGS.keyRingNudgeY)}
                     />
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      Lug sits flush with the bottom of the shell. Use Nudge X/Y to shift it left/right or in/out from the default top-centre position.
+                      Lug sits flush with the bottom of the shell. Use Position to anchor it to the top or bottom edge, then Nudge X/Y for fine adjustment.
                     </p>
                   </div>
                 )}
