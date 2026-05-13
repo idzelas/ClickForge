@@ -2207,6 +2207,27 @@ export default function Studio() {
             </div>
             )}
 
+            {/* ── Mechanisms ── */}
+            {sidebarMode === "advanced" && (
+            <div>
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+                Mechanisms
+              </h2>
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={settings.housingsEnabled ?? true}
+                    onChange={(e) => setSetting("housingsEnabled", e.target.checked)}
+                    className="h-4 w-4 rounded accent-primary"
+                  />
+                  <span className="text-sm">Inner housings</span>
+                  <InfoTooltip text="When off, all MX mechanism geometry (keycap pocket, switch cavity, boss, pin holes) is removed from both pieces. Use this for decorative two-piece shells." />
+                </label>
+              </div>
+            </div>
+            )}
+
             {/* ── Key Ring (outer shell only) ── */}
             {sidebarMode === "advanced" && (
             <div>
@@ -2236,6 +2257,25 @@ export default function Studio() {
                 </label>
                 {settings.keyRingEnabled && (
                   <div className="space-y-5 pl-6">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-muted-foreground w-24 shrink-0">Position</span>
+                      <div className="flex gap-1">
+                        {(["top", "bottom"] as const).map((pos) => (
+                          <button
+                            key={pos}
+                            type="button"
+                            onClick={() => setSetting("keyRingPosition", pos)}
+                            className={`px-3 py-0.5 text-xs rounded border transition-colors ${
+                              (settings.keyRingPosition ?? "top") === pos
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "border-border hover:border-primary/60"
+                            }`}
+                          >
+                            {pos.charAt(0).toUpperCase() + pos.slice(1)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <SliderRow
                       label="Cylinder diameter"
                       value={settings.keyRingOuterDiameter ?? DEFAULT_SETTINGS.keyRingOuterDiameter}

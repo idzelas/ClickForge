@@ -69,6 +69,12 @@ export interface FidgetSettings {
   // All other geometry (outer boundaries, wall thicknesses, depth layers,
   // key-ring lug, etc.) is unchanged.
   swapCutouts: boolean;
+  // When false, all MX mechanism geometry (keycap pocket, switch cavity,
+  // boss, cross pocket, pin holes) is omitted from both pieces.
+  // The toy becomes a purely decorative two-piece shell.
+  housingsEnabled: boolean;
+  // Which edge of the outer shell the key-ring lug anchors to.
+  keyRingPosition: "top" | "bottom";
 }
 
 export const DEFAULT_SETTINGS: FidgetSettings = {
@@ -110,6 +116,8 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   keyRingNudgeY: 0,
   colorLayerThickness: 0.4,
   swapCutouts: false,
+  housingsEnabled: true,
+  keyRingPosition: "top",
 };
 
 /**
@@ -238,6 +246,7 @@ export function getOuterShellSig(s: FidgetSettings): string {
     s.mirrorShell, s.clearanceMm,
     s.swapCutouts, s.clickerSquareSize,
     s.targetSizeMm, s.lockDimension,
+    s.housingsEnabled ?? true,
   ].join("|");
 }
 
@@ -252,6 +261,7 @@ export function getInnerClickerSig(s: FidgetSettings): string {
     s.pocketOffsetX, s.pocketOffsetY,
     s.mirrorClicker, s.clearanceMm,
     s.targetSizeMm, s.lockDimension,
+    s.housingsEnabled ?? true,
   ].join("|");
 }
 
@@ -267,6 +277,7 @@ export function getKeyRingSig(s: FidgetSettings): string {
     s.keyRingEnabled, s.keyRingOuterDiameter,
     s.keyRingHoleDiameter, s.keyRingThickness,
     s.keyRingNudgeX ?? 0, s.keyRingNudgeY ?? 0,
+    s.keyRingPosition ?? "top",
   ].join("|");
 }
 
@@ -276,6 +287,7 @@ export function getValidateSig(s: FidgetSettings): string {
     s.bossDiameter, s.clearanceMm,
     s.mirrorShell,
     s.targetSizeMm, s.lockDimension,
+    s.housingsEnabled ?? true,
   ].join("|");
 }
 
@@ -301,6 +313,7 @@ export function createOuterShellGeometries(
 
   const baseShape = svgShapes.length > 0 ? svgShapes[0] : createDefaultShape(40);
   const { keycapSize, pinHolesEnabled } = settings;
+  const housingsEnabled = settings.housingsEnabled ?? true;
 
   // Resolve the three additive depth components (with migration fallbacks).
   const shellSolidFloor   = settings.shellSolidFloor   ?? DEFAULT_SETTINGS.shellSolidFloor;
@@ -373,7 +386,7 @@ export function createOuterShellGeometries(
 
   // ── 3. MX pin-hole section (deepest part of pocket) ────────────────────
   let innerFillPinSectionGeo: THREE.BufferGeometry | null = null;
-  if (!swapCutouts && pinHolesEnabled && pinDepth > 0) {
+  if (!swapCutouts && pinHolesEnabled && pinDepth > 0 && housingsEnabled) {
     const pinShape = cloneShape(innerShape);
     addMXPinHoles(pinShape, pinHoleRadius, ox, oy);
     innerFillPinSectionGeo = extrudeShape(pinShape, pinDepth, "shell/pinSection", shellStats);
@@ -392,33 +405,35 @@ export function createOuterShellGeometries(
     // cylindrical boss (cross pocket cut into its top) sitting inside it.
     const clickerSquareSize = settings.clickerSquareSize ?? DEFAULT_SETTINGS.clickerSquareSize;
     const wallsShape = cloneShape(innerShape);
-    addSquareHole(wallsShape, clickerSquareSize, ox, oy);
+    if (housingsEnabled) addSquareHole(wallsShape, clickerSquareSize, ox, oy);
     innerFillWallsGeo = extrudeShape(wallsShape, squareDepth, "shell/swapCavity", shellStats);
 
-    // Boss assembly — solid base + main shell with cross pocket through the top.
-    const bossDiameter   = settings.bossDiameter   ?? DEFAULT_SETTINGS.bossDiameter;
-    const bossHeight     = settings.bossHeight     ?? DEFAULT_SETTINGS.bossHeight;
-    const bossFloorGap   = settings.bossFloorGap   ?? DEFAULT_SETTINGS.bossFloorGap;
-    const crossSize      = settings.crossSize      ?? DEFAULT_SETTINGS.crossSize;
-    const crossDepth     = settings.crossDepth     ?? DEFAULT_SETTINGS.crossDepth;
-    const crossArmWidth  = settings.crossArmWidth  ?? DEFAULT_SETTINGS.crossArmWidth;
-    const bossRadius     = bossDiameter / 2;
-    shellBossBaseHeight  = Math.max(bossHeight - crossDepth, 0.05);
-    const bossCrossDepth = bossHeight - shellBossBaseHeight;
+    if (housingsEnabled) {
+      // Boss assembly — solid base + main shell with cross pocket through the top.
+      const bossDiameter   = settings.bossDiameter   ?? DEFAULT_SETTINGS.bossDiameter;
+      const bossHeight     = settings.bossHeight     ?? DEFAULT_SETTINGS.bossHeight;
+      const bossFloorGap   = settings.bossFloorGap   ?? DEFAULT_SETTINGS.bossFloorGap;
+      const crossSize      = settings.crossSize      ?? DEFAULT_SETTINGS.crossSize;
+      const crossDepth     = settings.crossDepth     ?? DEFAULT_SETTINGS.crossDepth;
+      const crossArmWidth  = settings.crossArmWidth  ?? DEFAULT_SETTINGS.crossArmWidth;
+      const bossRadius     = bossDiameter / 2;
+      shellBossBaseHeight  = Math.max(bossHeight - crossDepth, 0.05);
+      const bossCrossDepth = bossHeight - shellBossBaseHeight;
 
-    const bossBaseShape = makeCircleShape(bossRadius, 64, ox, oy);
-    shellBossBaseGeo = extrudeShape(bossBaseShape, shellBossBaseHeight, "shell/swapBossBase", shellStats);
+      const bossBaseShape = makeCircleShape(bossRadius, 64, ox, oy);
+      shellBossBaseGeo = extrudeShape(bossBaseShape, shellBossBaseHeight, "shell/swapBossBase", shellStats);
 
-    const bossMainShape = makeCircleShape(bossRadius, 64, ox, oy);
-    addCrossHole(bossMainShape, crossSize, crossArmWidth, ox, oy);
-    shellBossMainGeo = extrudeShape(bossMainShape, bossCrossDepth, "shell/swapBossMain", shellStats);
+      const bossMainShape = makeCircleShape(bossRadius, 64, ox, oy);
+      addCrossHole(bossMainShape, crossSize, crossArmWidth, ox, oy);
+      shellBossMainGeo = extrudeShape(bossMainShape, bossCrossDepth, "shell/swapBossMain", shellStats);
 
-    // Anchor the boss inside the pocket: floor → bossFloorGap → boss base → boss main.
-    shellBossBaseZ = floorDepth + bossFloorGap;
-    shellBossMainZ = shellBossBaseZ + shellBossBaseHeight;
+      // Anchor the boss inside the pocket: floor → bossFloorGap → boss base → boss main.
+      shellBossBaseZ = floorDepth + bossFloorGap;
+      shellBossMainZ = shellBossBaseZ + shellBossBaseHeight;
+    }
   } else {
     const wallsShape = cloneShape(innerShape);
-    addSquareHole(wallsShape, keycapSize, ox, oy);
+    if (housingsEnabled) addSquareHole(wallsShape, keycapSize, ox, oy);
     innerFillWallsGeo = extrudeShape(wallsShape, squareDepth, "shell/keycapWalls", shellStats);
   }
 
@@ -515,10 +530,13 @@ export function createKeyRingGeometry(
 
   const nudgeX = settings.keyRingNudgeX ?? 0;
   const nudgeY = settings.keyRingNudgeY ?? 0;
+  const yAnchor = (settings.keyRingPosition ?? "top") === "bottom"
+    ? -(outerShellBounds.h / 2)
+    :   outerShellBounds.h / 2;
 
   return {
     geometry,
-    position: { x: nudgeX, y: outerShellBounds.h / 2 + nudgeY },
+    position: { x: nudgeX, y: yAnchor + nudgeY },
   };
 }
 
@@ -660,6 +678,7 @@ export function createInnerClickerGeometries(
   const pinHolesEnabled    = settings.pinHolesEnabled    ?? false;
   const pinHoleRadius      = settings.pinHoleRadius      ?? DEFAULT_SETTINGS.pinHoleRadius;
   const pinHoleDepth       = settings.pinHoleDepth       ?? DEFAULT_SETTINGS.pinHoleDepth;
+  const housingsEnabled    = settings.housingsEnabled    ?? true;
 
   const mirrorClicker = settings.mirrorClicker ?? false;
   const svgShape = transformToMm(baseShape, scale, svgWidth, svgHeight, mirrorClicker);
@@ -690,15 +709,15 @@ export function createInnerClickerGeometries(
     : 0;
   const wallsDepth = clickerSquareDepth - pinSectionDepth;
 
-  // Upper section — switch housing cavity cut from the top (original size)
+  // Upper section — switch housing cavity (omit hole when housings are disabled)
   const wallsShape = cloneShape(clickerShape);
-  addSquareHole(wallsShape, clickerSquareSize, ox, oy);
+  if (housingsEnabled) addSquareHole(wallsShape, clickerSquareSize, ox, oy);
   const wallsGeo = extrudeShape(wallsShape, wallsDepth, "clicker/walls", clickerStats);
 
   // Lower pin-hole section (swap mode only) — sits between floor and walls,
   // mirroring the layering pattern the shell uses in default mode.
   let pinSectionGeo: THREE.BufferGeometry | null = null;
-  if (pinSectionDepth > 0) {
+  if (pinSectionDepth > 0 && housingsEnabled) {
     const pinShape = cloneShape(clickerShape);
     addMXPinHoles(pinShape, pinHoleRadius, ox, oy);
     pinSectionGeo = extrudeShape(pinShape, pinSectionDepth, "clicker/pinSection", clickerStats);
@@ -715,7 +734,7 @@ export function createInnerClickerGeometries(
 
   let bossBaseGeo: THREE.BufferGeometry | null = null;
   let bossMainGeo: THREE.BufferGeometry | null = null;
-  if (!swapCutouts) {
+  if (!swapCutouts && housingsEnabled) {
     const bossRadius = bossDiameter / 2;
     // Boss is offset by (ox, oy) so it stays centred on the switch cavity.
     const bossBaseShape = makeCircleShape(bossRadius, 64, ox, oy);
@@ -1075,6 +1094,8 @@ export function validateGeometry(
   svgHeight: number
 ): GeometryWarning[] {
   if (!svgShapes.length || svgWidth <= 0 || svgHeight <= 0) return [];
+  // No mechanism geometry to validate when housings are disabled.
+  if (!(settings.housingsEnabled ?? true)) return [];
 
   const warnings: GeometryWarning[] = [];
   const base = settings.lockDimension === "width" ? svgWidth : svgHeight;
