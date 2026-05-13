@@ -491,6 +491,7 @@ function InnerClickerGroupInner({
   clickerPinSectionRef,
   bossBaseRef,
   bossMainRef,
+  clickerKeyRingRef,
   fitCheck,
   onBounds,
   color,
@@ -506,6 +507,7 @@ function InnerClickerGroupInner({
   clickerPinSectionRef: React.RefObject<THREE.Mesh | null>;
   bossBaseRef: React.RefObject<THREE.Mesh | null>;
   bossMainRef: React.RefObject<THREE.Mesh | null>;
+  clickerKeyRingRef: React.RefObject<THREE.Mesh | null>;
   fitCheck: boolean;
   onBounds?: (b: { w: number; h: number }) => void;
   color: string;
@@ -524,6 +526,17 @@ function InnerClickerGroupInner({
 
   // Report actual clicker footprint to parent whenever geometry changes.
   useEffect(() => { onBounds?.(geos.bounds); }, [geos, onBounds]);
+
+  // Optional key-ring lug on the clicker — shares all key-ring settings with
+  // the shell lug but is positioned using the clicker's own bounding box.
+  const keyRingSig = getKeyRingSig(settings);
+  const clickerKeyRing = useMemo(
+    () => (settings.keyRingEnabled && (settings.keyRingOnClicker ?? false))
+      ? createKeyRingGeometry(geos.bounds, settings)
+      : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [geos, keyRingSig]
+  );
 
   const { clickerTotalDepth, clickerFloorDepth, bossFloorGap, bossHeight, bossBaseHeight, pinSectionDepth } = geos;
   const shellDepth = getShellTotalDepth(settings);
@@ -629,6 +642,33 @@ function InnerClickerGroupInner({
           <MeshHighlightOverlay geometry={geos.bossMain} position={[0, 0, bossMainZ]} highlighted={hl("click_boss")} />
         </>
       )}
+
+      {/* Optional key-ring lug on the clicker — anchored to the clicker's bottom face */}
+      {clickerKeyRing && (
+        <mesh
+          ref={clickerKeyRingRef}
+          position={[clickerKeyRing.position.x, clickerKeyRing.position.y, baseZ]}
+          castShadow={!fitCheck && !isXray && !isWire}
+          receiveShadow
+        >
+          <primitive object={clickerKeyRing.geometry} />
+          <meshStandardMaterial
+            color={color}
+            metalness={0.25}
+            roughness={0.45}
+            opacity={isWire ? 0 : fitCheck ? 0.28 : isXray ? 0.3 : 1}
+            transparent={isWire || fitCheck || isXray}
+            depthWrite={!isWire && !fitCheck && !isXray}
+          />
+        </mesh>
+      )}
+      {clickerKeyRing && isWire && (
+        <EdgeWireframe
+          geometry={clickerKeyRing.geometry}
+          position={[clickerKeyRing.position.x, clickerKeyRing.position.y, baseZ]}
+          color={color}
+        />
+      )}
     </group>
   );
 }
@@ -652,8 +692,10 @@ const InnerClickerGroup = memo(
     prev.clickerPinSectionRef === next.clickerPinSectionRef &&
     prev.bossBaseRef === next.bossBaseRef &&
     prev.bossMainRef === next.bossMainRef &&
+    prev.clickerKeyRingRef === next.clickerKeyRingRef &&
     arraysShallowEqual(prev.activeHighlights, next.activeHighlights) &&
     getInnerClickerSig(prev.settings) === getInnerClickerSig(next.settings) &&
+    getKeyRingSig(prev.settings) === getKeyRingSig(next.settings) &&
     // The clicker reads shell housing depth + flipClicker for positioning
     // outside the geometry sig, so include those too.
     (prev.settings.flipClicker ?? false) === (next.settings.flipClicker ?? false) &&
@@ -1356,6 +1398,7 @@ export default function Studio() {
   const shellBossBaseRef = useRef<THREE.Mesh | null>(null);
   const shellBossMainRef = useRef<THREE.Mesh | null>(null);
   const keyRingRef = useRef<THREE.Mesh | null>(null);
+  const clickerKeyRingRef = useRef<THREE.Mesh | null>(null);
   const clickerFloorRef = useRef<THREE.Mesh | null>(null);
   const clickerWallsRef = useRef<THREE.Mesh | null>(null);
   const clickerPinSectionRef = useRef<THREE.Mesh | null>(null);
@@ -1609,7 +1652,7 @@ export default function Studio() {
   const getMeshGroups = (): MeshGroups => ({
     shell: [outerWallRef, innerFillFloorRef, innerFillPinSectionRef, innerFillWallsRef, innerFillHousingCapRef, shellBossBaseRef, shellBossMainRef]
       .map((r) => r.current).filter((m): m is THREE.Mesh => m !== null),
-    clicker: [clickerFloorRef, clickerPinSectionRef, clickerWallsRef, bossBaseRef, bossMainRef]
+    clicker: [clickerFloorRef, clickerPinSectionRef, clickerWallsRef, bossBaseRef, bossMainRef, clickerKeyRingRef]
       .map((r) => r.current).filter((m): m is THREE.Mesh => m !== null),
     keyRing: settings.keyRingEnabled ? keyRingRef.current : null,
     colorLayers: (() => {
@@ -2339,6 +2382,16 @@ export default function Studio() {
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       Lug sits flush with the bottom of the shell. Use Position to anchor it to the top or bottom edge, then Nudge X/Y for fine adjustment.
                     </p>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={settings.keyRingOnClicker ?? false}
+                        onChange={(e) => setSetting("keyRingOnClicker", e.target.checked)}
+                        className="h-4 w-4 rounded accent-primary"
+                      />
+                      <span className="text-sm">Also on inner clicker</span>
+                      <InfoTooltip text="Adds an identical key-ring lug to the inner clicker piece, using the same size, position, and nudge settings." />
+                    </label>
                   </div>
                 )}
               </div>
@@ -3007,6 +3060,7 @@ export default function Studio() {
                       clickerPinSectionRef={clickerPinSectionRef}
                       bossBaseRef={bossBaseRef}
                       bossMainRef={bossMainRef}
+                      clickerKeyRingRef={clickerKeyRingRef}
                       fitCheck={fitCheckMode}
                       onBounds={setClickerBounds}
                       color={settings.clickerColor ?? DEFAULT_SETTINGS.clickerColor}
