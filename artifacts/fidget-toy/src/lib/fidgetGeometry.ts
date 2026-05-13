@@ -77,6 +77,8 @@ export interface FidgetSettings {
   keyRingPosition: "top" | "bottom";
   // When true, an identical key-ring lug is also added to the inner clicker.
   keyRingOnClicker: boolean;
+  // When false, the key-ring lug is suppressed on the outer shell.
+  keyRingOnShell: boolean;
 }
 
 export const DEFAULT_SETTINGS: FidgetSettings = {
@@ -121,6 +123,7 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   housingsEnabled: true,
   keyRingPosition: "top",
   keyRingOnClicker: false,
+  keyRingOnShell: true,
 };
 
 /**
@@ -282,6 +285,7 @@ export function getKeyRingSig(s: FidgetSettings): string {
     s.keyRingNudgeX ?? 0, s.keyRingNudgeY ?? 0,
     s.keyRingPosition ?? "top",
     s.keyRingOnClicker ?? false,
+    s.keyRingOnShell ?? true,
   ].join("|");
 }
 

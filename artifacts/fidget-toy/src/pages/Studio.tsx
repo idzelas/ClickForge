@@ -305,7 +305,7 @@ function OuterShellGroupInner({
   );
 
   const keyRing = useMemo(
-    () => settings.keyRingEnabled
+    () => (settings.keyRingEnabled && (settings.keyRingOnShell ?? true))
       ? createKeyRingGeometry(geos.bounds, settings)
       : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1654,7 +1654,7 @@ export default function Studio() {
       .map((r) => r.current).filter((m): m is THREE.Mesh => m !== null),
     clicker: [clickerFloorRef, clickerPinSectionRef, clickerWallsRef, bossBaseRef, bossMainRef, clickerKeyRingRef]
       .map((r) => r.current).filter((m): m is THREE.Mesh => m !== null),
-    keyRing: settings.keyRingEnabled ? keyRingRef.current : null,
+    keyRing: (settings.keyRingEnabled && (settings.keyRingOnShell ?? true)) ? keyRingRef.current : null,
     colorLayers: (() => {
       const group = colorLayersGroupRef.current;
       if (!group || colorLayerGeometries.length === 0) return [];
@@ -2385,11 +2385,21 @@ export default function Studio() {
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
+                        checked={settings.keyRingOnShell ?? true}
+                        onChange={(e) => setSetting("keyRingOnShell", e.target.checked)}
+                        className="h-4 w-4 rounded accent-primary"
+                      />
+                      <span className="text-sm">On outer shell</span>
+                      <InfoTooltip text="Show the key-ring lug on the outer shell piece." />
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
                         checked={settings.keyRingOnClicker ?? false}
                         onChange={(e) => setSetting("keyRingOnClicker", e.target.checked)}
                         className="h-4 w-4 rounded accent-primary"
                       />
-                      <span className="text-sm">Also on inner clicker</span>
+                      <span className="text-sm">On inner clicker</span>
                       <InfoTooltip text="Adds an identical key-ring lug to the inner clicker piece, using the same size, position, and nudge settings." />
                     </label>
                   </div>
