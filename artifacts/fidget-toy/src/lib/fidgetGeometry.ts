@@ -334,9 +334,10 @@ export function createOuterShellGeometries(
   const swapCutouts = settings.swapCutouts ?? false;
 
   const pocketDepth = Math.min(keycapPocketDepth, shellSwitchHousing);
-  // In swap mode the shell carries a single full-pocket-depth cross cutout
-  // (no pin sub-section, no separate keycap-square section).
-  const pinDepth    = swapCutouts
+  // In swap mode — or when all mechanism geometry is disabled — the shell
+  // carries no separate pin-hole sub-section, so the walls fill the full
+  // pocketDepth contiguously and no void layer is left.
+  const pinDepth    = (swapCutouts || !housingsEnabled)
     ? 0
     : (pinHolesEnabled ? Math.min(pinHoleDepth, pocketDepth - 1) : 0);
   const squareDepth = pocketDepth - pinDepth;
@@ -704,7 +705,9 @@ export function createInnerClickerGeometries(
   // Swap mode:    walls = upper part (clickerSquareDepth − pinSectionDepth) with
   //               square hole, and an optional separate pin section sitting
   //               below it (when pinHolesEnabled).
-  const pinSectionDepth = (swapCutouts && pinHolesEnabled)
+  // When housings are disabled there is no pin-hole sub-section, so wallsDepth
+  // equals the full clickerSquareDepth and no void layer is left below the walls.
+  const pinSectionDepth = (swapCutouts && pinHolesEnabled && housingsEnabled)
     ? Math.min(pinHoleDepth, Math.max(0, clickerSquareDepth - 1))
     : 0;
   const wallsDepth = clickerSquareDepth - pinSectionDepth;
