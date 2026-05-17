@@ -377,7 +377,7 @@ function OuterShellGroupInner({
       {keyRing && (
         <mesh
           ref={keyRingRef}
-          position={[keyRing.position.x, keyRing.position.y, geos.zOffsets.outerWall]}
+          position={[keyRing.position.x, keyRing.position.y, geos.zOffsets.outerWall + keyRing.position.z]}
           castShadow={!fitCheck && !isXray && !isWire}
           receiveShadow
         >
@@ -395,7 +395,7 @@ function OuterShellGroupInner({
       {keyRing && isWire && (
         <EdgeWireframe
           geometry={keyRing.geometry}
-          position={[keyRing.position.x, keyRing.position.y, geos.zOffsets.outerWall]}
+          position={[keyRing.position.x, keyRing.position.y, geos.zOffsets.outerWall + keyRing.position.z]}
           color={color}
         />
       )}
@@ -647,7 +647,7 @@ function InnerClickerGroupInner({
       {clickerKeyRing && (
         <mesh
           ref={clickerKeyRingRef}
-          position={[clickerKeyRing.position.x, clickerKeyRing.position.y, baseZ]}
+          position={[clickerKeyRing.position.x, clickerKeyRing.position.y, baseZ + clickerKeyRing.position.z]}
           castShadow={!fitCheck && !isXray && !isWire}
           receiveShadow
         >
@@ -665,7 +665,7 @@ function InnerClickerGroupInner({
       {clickerKeyRing && isWire && (
         <EdgeWireframe
           geometry={clickerKeyRing.geometry}
-          position={[clickerKeyRing.position.x, clickerKeyRing.position.y, baseZ]}
+          position={[clickerKeyRing.position.x, clickerKeyRing.position.y, baseZ + clickerKeyRing.position.z]}
           color={color}
         />
       )}
@@ -2379,8 +2379,20 @@ export default function Studio() {
                       defaultValue={DEFAULT_SETTINGS.keyRingNudgeY}
                       onReset={() => setSetting("keyRingNudgeY", DEFAULT_SETTINGS.keyRingNudgeY)}
                     />
+                    <SliderRow
+                      label="Nudge Z"
+                      value={settings.keyRingNudgeZ ?? DEFAULT_SETTINGS.keyRingNudgeZ}
+                      min={-10}
+                      max={10}
+                      step={0.5}
+                      unit="mm"
+                      onChange={(v) => setSetting("keyRingNudgeZ", v)}
+                      commitOnRelease
+                      defaultValue={DEFAULT_SETTINGS.keyRingNudgeZ}
+                      onReset={() => setSetting("keyRingNudgeZ", DEFAULT_SETTINGS.keyRingNudgeZ)}
+                    />
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      Lug sits flush with the bottom of the shell. Use Position to anchor it to the top or bottom edge, then Nudge X/Y for fine adjustment.
+                      Lug sits flush with the bottom of the shell. Use Position to anchor it to the top or bottom edge, then Nudge X/Y/Z for fine adjustment.
                     </p>
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input

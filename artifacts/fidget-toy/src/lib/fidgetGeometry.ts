@@ -51,6 +51,7 @@ export interface FidgetSettings {
   keyRingThickness: number;     // mm, lug Z thickness (aligned to bottom), e.g. 1
   keyRingNudgeX: number;        // mm, horizontal offset from centre, e.g. 0
   keyRingNudgeY: number;        // mm, vertical offset from top-centre default, e.g. 0
+  keyRingNudgeZ: number;        // mm, depth offset from default bottom face, e.g. 0
   // Color region flat bodies — thickness of each per-color extruded slab,
   // sitting flush with the bottom face of the outer shell (z=0 upward).
   colorLayerThickness: number;
@@ -118,6 +119,7 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   keyRingThickness: 3,
   keyRingNudgeX: 0,
   keyRingNudgeY: 0,
+  keyRingNudgeZ: 0,
   colorLayerThickness: 0.4,
   swapCutouts: false,
   housingsEnabled: true,
@@ -282,7 +284,7 @@ export function getKeyRingSig(s: FidgetSettings): string {
   return [
     s.keyRingEnabled, s.keyRingOuterDiameter,
     s.keyRingHoleDiameter, s.keyRingThickness,
-    s.keyRingNudgeX ?? 0, s.keyRingNudgeY ?? 0,
+    s.keyRingNudgeX ?? 0, s.keyRingNudgeY ?? 0, s.keyRingNudgeZ ?? 0,
     s.keyRingPosition ?? "top",
     s.keyRingOnClicker ?? false,
     s.keyRingOnShell ?? true,
@@ -493,7 +495,7 @@ export function createOuterShellGeometries(
  */
 export interface KeyRingGeometryResult {
   geometry: THREE.BufferGeometry;
-  position: { x: number; y: number };
+  position: { x: number; y: number; z: number };
 }
 
 export function createKeyRingGeometry(
@@ -539,13 +541,14 @@ export function createKeyRingGeometry(
 
   const nudgeX = settings.keyRingNudgeX ?? 0;
   const nudgeY = settings.keyRingNudgeY ?? 0;
+  const nudgeZ = settings.keyRingNudgeZ ?? 0;
   const yAnchor = (settings.keyRingPosition ?? "top") === "bottom"
     ? -(outerShellBounds.h / 2)
     :   outerShellBounds.h / 2;
 
   return {
     geometry,
-    position: { x: nudgeX, y: yAnchor + nudgeY },
+    position: { x: nudgeX, y: yAnchor + nudgeY, z: nudgeZ },
   };
 }
 
