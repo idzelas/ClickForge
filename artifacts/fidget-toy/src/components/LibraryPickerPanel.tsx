@@ -1,5 +1,5 @@
 import { Loader2, Library as LibraryIcon, FolderOpen } from "lucide-react";
-import { useListSvgDesigns, getListSvgDesignsQueryKey } from "@workspace/api-client-react";
+import { useListSvgDesigns } from "@/hooks/useSvgDesigns";
 import { svgToDataUri } from "@/lib/svgPreview";
 import {
   Dialog,
@@ -17,9 +17,7 @@ interface Props {
 }
 
 export default function LibraryPickerPanel({ open, onClose, onPick }: Props) {
-  const designs = useListSvgDesigns({
-    query: { enabled: open, queryKey: getListSvgDesignsQueryKey() },
-  });
+  const designs = useListSvgDesigns();
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>

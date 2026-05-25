@@ -1,15 +1,9 @@
 import { Link, useLocation } from "wouter";
-import { useUser, useClerk } from "@clerk/react";
+import { useAuth, useUser } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  useListProjects,
-  useDeleteProject,
-  useGetProjectStats,
-  getListProjectsQueryKey,
-} from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useListProjects, useDeleteProject, useProjectStats } from "@/hooks/useProjects";
 import { useToast } from "@/hooks/use-toast";
 import { svgToDataUri } from "@/lib/svgPreview";
 import {
@@ -25,20 +19,18 @@ import {
 
 export default function Projects() {
   const { user } = useUser();
-  const { signOut } = useClerk();
+  const { signOut } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
   const projects = useListProjects();
-  const stats = useGetProjectStats();
+  const stats = useProjectStats();
   const deleteProject = useDeleteProject();
 
   const handleDelete = async (id: number, name: string) => {
     if (!confirm(`Delete "${name}"?`)) return;
     try {
-      await deleteProject.mutateAsync({ id });
-      queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+      await deleteProject.mutateAsync(id);
       toast({ title: "Project deleted" });
     } catch {
       toast({ title: "Failed to delete project", variant: "destructive" });
@@ -71,11 +63,11 @@ export default function Projects() {
           </nav>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{user?.emailAddresses[0]?.emailAddress}</span>
+          <span className="text-sm text-muted-foreground">{user?.email}</span>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => signOut(() => setLocation("/"))}
+            onClick={() => { signOut(); setLocation("/"); }}
             data-testid="button-sign-out"
           >
             <LogOut className="h-4 w-4 mr-1" />

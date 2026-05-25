@@ -119,7 +119,7 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   keyRingThickness: 3,
   keyRingNudgeX: 0,
   keyRingNudgeY: 0,
-  keyRingNudgeZ: 0,
+  keyRingNudgeZ: 7,
   colorLayerThickness: 0.4,
   swapCutouts: false,
   housingsEnabled: true,
@@ -284,7 +284,9 @@ export function getKeyRingSig(s: FidgetSettings): string {
   return [
     s.keyRingEnabled, s.keyRingOuterDiameter,
     s.keyRingHoleDiameter, s.keyRingThickness,
-    s.keyRingNudgeX ?? 0, s.keyRingNudgeY ?? 0, s.keyRingNudgeZ ?? 0,
+    s.keyRingNudgeX ?? DEFAULT_SETTINGS.keyRingNudgeX,
+    s.keyRingNudgeY ?? DEFAULT_SETTINGS.keyRingNudgeY,
+    s.keyRingNudgeZ ?? DEFAULT_SETTINGS.keyRingNudgeZ,
     s.keyRingPosition ?? "top",
     s.keyRingOnClicker ?? false,
     s.keyRingOnShell ?? true,
@@ -539,9 +541,9 @@ export function createKeyRingGeometry(
     bevelEnabled: false,
   });
 
-  const nudgeX = settings.keyRingNudgeX ?? 0;
-  const nudgeY = settings.keyRingNudgeY ?? 0;
-  const nudgeZ = settings.keyRingNudgeZ ?? 0;
+  const nudgeX = settings.keyRingNudgeX ?? DEFAULT_SETTINGS.keyRingNudgeX;
+  const nudgeY = settings.keyRingNudgeY ?? DEFAULT_SETTINGS.keyRingNudgeY;
+  const nudgeZ = settings.keyRingNudgeZ ?? DEFAULT_SETTINGS.keyRingNudgeZ;
   const yAnchor = (settings.keyRingPosition ?? "top") === "bottom"
     ? -(outerShellBounds.h / 2)
     :   outerShellBounds.h / 2;

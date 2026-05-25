@@ -1,13 +1,10 @@
-import { useUser } from "@clerk/react";
+import { useUser } from "../lib/auth";
 
 /**
  * Beta override: while billing is not wired up, every signed-in user is
  * treated as Premium. Flip this single constant to `false` to enable the
  * Free tier behaviour everywhere (gates appear on premium controls and
  * the 4-project save limit kicks in).
- *
- * This constant is mirrored in `artifacts/api-server/src/lib/tier.ts` so
- * the server applies the same rule.
  */
 export const BETA_AUTO_PREMIUM = true;
 

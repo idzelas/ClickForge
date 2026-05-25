@@ -1,5 +1,5 @@
 import { LogIn, UserPlus } from "lucide-react";
-import { SignInButton, SignUpButton } from "@clerk/react";
+import { Link } from "wouter";
 import {
   Dialog,
   DialogContent,
@@ -38,18 +38,18 @@ export function AuthRequiredModal({ open, onOpenChange, action }: AuthRequiredMo
           >
             Keep tinkering
           </Button>
-          <SignUpButton mode="modal">
+          <Link href="/sign-up">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               <UserPlus className="h-4 w-4 mr-1.5" />
               Create account
             </Button>
-          </SignUpButton>
-          <SignInButton mode="modal">
+          </Link>
+          <Link href="/sign-in">
             <Button onClick={() => onOpenChange(false)}>
               <LogIn className="h-4 w-4 mr-1.5" />
               Sign in
             </Button>
-          </SignInButton>
+          </Link>
         </DialogFooter>
       </DialogContent>
     </Dialog>

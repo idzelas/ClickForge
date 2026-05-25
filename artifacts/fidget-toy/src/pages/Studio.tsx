@@ -3,7 +3,7 @@ import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls, Grid, Html, Line } from "@react-three/drei";
 import * as THREE from "three";
 import { useLocation, useParams, Link } from "wouter";
-import { useUser, useClerk, SignInButton } from "@clerk/react";
+import { useUser, useAuth } from "@/lib/auth";
 import { useTier, FREE_PROJECT_LIMIT, type GatedFeature } from "@/lib/tier";
 import {
   loadDraft,
@@ -26,17 +26,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import {
-  useCreateProject,
-  useUpdateProject,
-  useGetProject,
-  getListProjectsQueryKey,
-  useGetUserPreferences,
-  useUpdateUserPreferences,
-  getGetUserPreferencesQueryKey,
-  ApiError,
-  type FidgetSettingsBlob,
-} from "@workspace/api-client-react";
+import { useCreateProject, useUpdateProject, useGetProject } from "@/hooks/useProjects";
+import { useGetPreferences, useUpdatePreferences } from "@/hooks/usePreferences";
 import { useQueryClient } from "@tanstack/react-query";
 import { parseSVGContent, parseSVGColorRegions, extractSvgColor, analyzeSVG } from "@/lib/svgParser";
 import type { SVGCompatibilityIssue } from "@/lib/svgParser";
@@ -1213,8 +1204,8 @@ function AutoCamera({
 // ─── Main component ───────────────────────────────────────────────────────
 
 export default function Studio() {
-  const { user } = useUser();
-  const { signOut } = useClerk();
+  const { user, isSignedIn } = useUser();
+  const { signOut } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -1244,10 +1235,8 @@ export default function Studio() {
 
   // For signed-in users, mirror the choice on the server so it follows
   // them across browsers and devices.
-  const userPrefs = useGetUserPreferences({
-    query: { enabled: !isGuest, queryKey: ["/api/user/preferences"] },
-  });
-  const updatePrefs = useUpdateUserPreferences();
+  const userPrefs = useGetPreferences();
+  const updatePrefs = useUpdatePreferences();
   const prefsHydratedRef = useRef(false);
   // Track the last sidebarMode we've sent to the server so we don't re-fire
   // the sync effect on every render (updatePrefs is a fresh reference each
@@ -1266,9 +1255,9 @@ export default function Studio() {
     if (lastSyncedModeRef.current === sidebarMode) return;
     lastSyncedModeRef.current = sidebarMode;
     updatePrefs
-      .mutateAsync({ data: { sidebarMode } })
+      .mutateAsync({ sidebarMode })
       .then(() =>
-        queryClient.invalidateQueries({ queryKey: getGetUserPreferencesQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: ["user-preferences"] }),
       )
       .catch(() => {
         // Best effort; localStorage already kept it locally. Clear the ref so
@@ -1754,15 +1743,15 @@ export default function Studio() {
         svgData: svgState.rawSvg,
         extrudeDepth: getShellTotalDepth(settings),
         keycapSize: settings.keycapSize,
-        settings: settings as unknown as FidgetSettingsBlob,
+        settings: settings as Record<string, unknown>,
       };
       if (projectId) {
-        await updateProject.mutateAsync({ id: projectId, data: payload });
+        await updateProject.mutateAsync({ id: projectId, ...payload });
         toast({ title: "Project saved" });
       } else {
-        const project = await createProject.mutateAsync({ data: payload });
+        const project = await createProject.mutateAsync(payload);
         setProjectId(project.id);
-        queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["projects"] });
         clearDraft();
         toast({ title: "Project created", description: project.name });
       }
@@ -1770,10 +1759,8 @@ export default function Studio() {
       // Server enforces the Free-tier 3-project save limit. Map that into
       // the Premium upgrade modal so the call to action is consistent.
       if (
-        err instanceof ApiError &&
-        typeof err.data === "object" &&
-        err.data !== null &&
-        (err.data as { code?: string }).code === "PROJECT_LIMIT_REACHED"
+        err instanceof Error &&
+        err.message?.includes("PROJECT_LIMIT_REACHED")
       ) {
         setUpgradeFeature("save_over_limit");
         return;
@@ -1843,16 +1830,16 @@ export default function Studio() {
             </Link>
           )}
           {isGuest ? (
-            <SignInButton mode="modal">
+            <Link href="/sign-in">
               <Button size="sm">
                 <LogIn className="h-4 w-4 mr-1" />
                 Sign in
               </Button>
-            </SignInButton>
+            </Link>
           ) : (
-            <Button variant="ghost" size="sm" onClick={() => signOut(() => setLocation("/"))}>
+            <Button variant="ghost" size="sm" onClick={() => { signOut(); setLocation("/"); }}>
               <LogOut className="h-4 w-4 mr-1" />
-              {user?.firstName ?? "Sign out"}
+              {user?.email?.split("@")[0] ?? "Sign out"}
             </Button>
           )}
         </div>

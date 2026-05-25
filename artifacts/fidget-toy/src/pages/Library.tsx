@@ -1,13 +1,13 @@
 import { useState, useRef, useCallback } from "react";
 import { Link, useLocation } from "wouter";
-import { useUser, useClerk } from "@clerk/react";
+import { useAuth, useUser } from "@/lib/auth";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListSvgDesigns,
   useCreateSvgDesign,
   useDeleteSvgDesign,
   getListSvgDesignsQueryKey,
-} from "@workspace/api-client-react";
+} from "@/hooks/useSvgDesigns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -40,7 +40,7 @@ const RASTER_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
 export default function Library() {
   const { user } = useUser();
-  const { signOut } = useClerk();
+  const { signOut } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -57,7 +57,7 @@ export default function Library() {
   const [saveName, setSaveName] = useState("");
 
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: getListSvgDesignsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getListSvgDesignsQueryKey(user?.id) });
 
   const onPickFile = (file: File) => {
     if (!RASTER_TYPES.includes(file.type) && !/\.(png|jpe?g|webp)$/i.test(file.name)) {
@@ -93,7 +93,7 @@ export default function Library() {
       return;
     }
     try {
-      await createDesign.mutateAsync({ data: { name, svgData: saveDialog.svg } });
+      await createDesign.mutateAsync({ name, svgData: saveDialog.svg });
       invalidate();
       toast({ title: "Saved to library", description: name });
       setSaveDialog(null);
@@ -107,7 +107,7 @@ export default function Library() {
   const handleDelete = async (id: number, name: string) => {
     if (!confirm(`Delete "${name}" from your library?`)) return;
     try {
-      await deleteDesign.mutateAsync({ id });
+      await deleteDesign.mutateAsync(id);
       invalidate();
       toast({ title: "Design deleted" });
     } catch {
@@ -148,11 +148,11 @@ export default function Library() {
           </nav>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{user?.emailAddresses[0]?.emailAddress}</span>
+          <span className="text-sm text-muted-foreground">{user?.email}</span>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => signOut(() => setLocation("/"))}
+            onClick={() => { signOut(); setLocation("/"); }}
             data-testid="button-sign-out"
           >
             <LogOut className="h-4 w-4 mr-1" />
