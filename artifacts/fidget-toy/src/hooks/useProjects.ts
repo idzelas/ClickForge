@@ -28,7 +28,7 @@ function rowToProject(row: ProjectRow): Project {
     extrudeDepth: row.extrude_depth,
     keycapSize: row.keycap_size,
     pegRadius: row.peg_radius,
-    settings: row.settings,
+    settings: row.settings as Record<string, unknown> | null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -111,7 +111,7 @@ export function useCreateProject() {
         extrude_depth: input.extrudeDepth ?? 4,
         keycap_size: input.keycapSize ?? 14,
         peg_radius: input.pegRadius ?? 3.5,
-        settings: input.settings ?? null,
+        settings: (input.settings as any) ?? null,
       };
       const { data, error } = await supabase
         .from("projects")
@@ -142,13 +142,13 @@ export function useUpdateProject() {
       pegRadius?: number;
       settings?: Record<string, unknown> | null;
     }) => {
-      const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      const row: Database["public"]["Tables"]["projects"]["Update"] = { updated_at: new Date().toISOString() };
       if (updates.name !== undefined) row.name = updates.name;
       if (updates.svgData !== undefined) row.svg_data = updates.svgData;
       if (updates.extrudeDepth !== undefined) row.extrude_depth = updates.extrudeDepth;
       if (updates.keycapSize !== undefined) row.keycap_size = updates.keycapSize;
       if (updates.pegRadius !== undefined) row.peg_radius = updates.pegRadius;
-      if (updates.settings !== undefined) row.settings = updates.settings;
+      if (updates.settings !== undefined) row.settings = updates.settings as any;
 
       const { data, error } = await supabase
         .from("projects")

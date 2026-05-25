@@ -1190,8 +1190,8 @@ function AutoCamera({
     // camera.lookAt(oldTarget) and overrides our positioning, so the camera
     // appears to drift off-center after the user has panned.
     if (controls && "target" in controls) {
-      (controls as { target: THREE.Vector3; update: () => void }).target.set(0, 0, 0);
-      (controls as { target: THREE.Vector3; update: () => void }).update();
+      (controls as unknown as { target: THREE.Vector3; update: () => void }).target.set(0, 0, 0);
+      (controls as unknown as { target: THREE.Vector3; update: () => void }).update();
     }
   // controls must be in deps so the effect re-runs once OrbitControls mounts.
   // recenterKey is incremented by the Re-center button to trigger on demand.
@@ -1405,9 +1405,7 @@ export default function Studio() {
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
 
-  const loadedProject = useGetProject(routeProjectId ?? 0, {
-    query: { enabled: routeProjectId !== null, queryKey: [`/api/projects/${routeProjectId}`] },
-  });
+  const loadedProject = useGetProject(routeProjectId ?? undefined);
 
   const [hydratedForId, setHydratedForId] = useState<number | null>(null);
 
@@ -1743,7 +1741,7 @@ export default function Studio() {
         svgData: svgState.rawSvg,
         extrudeDepth: getShellTotalDepth(settings),
         keycapSize: settings.keycapSize,
-        settings: settings as Record<string, unknown>,
+        settings: settings as unknown as Record<string, unknown>,
       };
       if (projectId) {
         await updateProject.mutateAsync({ id: projectId, ...payload });

@@ -3,6 +3,14 @@
  * Matches the tables: projects, svg_designs, user_preferences
  */
 
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
+
 export interface Database {
   public: {
     Tables: {
@@ -15,7 +23,7 @@ export interface Database {
           extrude_depth: number;
           keycap_size: number;
           peg_radius: number;
-          settings: Record<string, unknown> | null;
+          settings: Json | null;
           export_count: number;
           created_at: string;
           updated_at: string;
@@ -28,7 +36,7 @@ export interface Database {
           extrude_depth?: number;
           keycap_size?: number;
           peg_radius?: number;
-          settings?: Record<string, unknown> | null;
+          settings?: Json | null;
           export_count?: number;
           created_at?: string;
           updated_at?: string;
@@ -41,11 +49,12 @@ export interface Database {
           extrude_depth?: number;
           keycap_size?: number;
           peg_radius?: number;
-          settings?: Record<string, unknown> | null;
+          settings?: Json | null;
           export_count?: number;
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: never[];
       };
       svg_designs: {
         Row: {
@@ -72,6 +81,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: never[];
       };
       user_preferences: {
         Row: {
@@ -89,6 +99,7 @@ export interface Database {
           sidebar_mode?: string;
           updated_at?: string;
         };
+        Relationships: never[];
       };
     };
     Views: Record<string, never>;
