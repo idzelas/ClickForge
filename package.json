@@ -1,6 +1,7 @@
 {
   "name": "clickforge",
   "version": "0.0.0",
+  "packageManager": "pnpm@11.3.0",
   "license": "MIT",
   "scripts": {
     "dev": "pnpm --filter @workspace/fidget-toy run dev",
