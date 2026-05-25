@@ -113,7 +113,7 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   mirrorClicker: true,
   shellColor: "#6C63FF",
   clickerColor: "#10B981",
-  keyRingEnabled: false,
+  keyRingEnabled: true,
   keyRingOuterDiameter: 10,
   keyRingHoleDiameter: 5,
   keyRingThickness: 3,
