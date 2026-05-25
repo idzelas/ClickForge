@@ -2275,7 +2275,7 @@ export default function Studio() {
                 >
                   <input
                     type="checkbox"
-                    checked={settings.keyRingEnabled ?? false}
+                    checked={settings.keyRingEnabled ?? true}
                     onChange={(e) => isPremium && setSetting("keyRingEnabled", e.target.checked)}
                     disabled={!isPremium}
                     className="h-4 w-4 rounded accent-primary"
