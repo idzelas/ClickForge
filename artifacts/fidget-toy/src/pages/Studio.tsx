@@ -47,8 +47,10 @@ import {
   getKeyRingSig,
   getValidateSig,
   DEFAULT_SETTINGS,
+  PRODUCT_DEFAULTS,
   computeAutoPocketOffset,
   type FidgetSettings,
+  type ProductType,
   type GeometryWarning,
 } from "@/lib/fidgetGeometry";
 import {
@@ -518,6 +520,7 @@ function InnerClickerGroupInner({
   bossBaseRef,
   bossMainRef,
   clickerKeyRingRef,
+  clickerMagnetSectionRef,
   fitCheck,
   onBounds,
   color,
@@ -534,6 +537,7 @@ function InnerClickerGroupInner({
   bossBaseRef: React.RefObject<THREE.Mesh | null>;
   bossMainRef: React.RefObject<THREE.Mesh | null>;
   clickerKeyRingRef: React.RefObject<THREE.Mesh | null>;
+  clickerMagnetSectionRef: React.RefObject<THREE.Mesh | null>;
   fitCheck: boolean;
   onBounds?: (b: { w: number; h: number }) => void;
   color: string;
@@ -564,7 +568,7 @@ function InnerClickerGroupInner({
     [geos, keyRingSig]
   );
 
-  const { clickerTotalDepth, clickerFloorDepth, bossFloorGap, bossHeight, bossBaseHeight, pinSectionDepth } = geos;
+  const { clickerTotalDepth, clickerFloorDepth, bossFloorGap, bossHeight, bossBaseHeight, pinSectionDepth, magnetSectionDepth } = geos;
   const shellDepth = getShellTotalDepth(settings);
   const shellHousingDepth = (settings.shellSolidFloor ?? DEFAULT_SETTINGS.shellSolidFloor)
                           + (settings.shellSwitchHousing ?? DEFAULT_SETTINGS.shellSwitchHousing);
@@ -605,8 +609,10 @@ function InnerClickerGroupInner({
   const floorZ     = baseZ;                                   // clicker solid floor
   // In swap mode, an optional pin-hole section sits between the floor and the
   // square cavity walls (mirrors the shell's default-mode layering).
-  const pinSectionZ = baseZ + clickerFloorDepth;
-  const wallsZ     = pinSectionZ + pinSectionDepth;           // clicker wall section
+  const pinSectionZ  = baseZ + clickerFloorDepth;
+  const wallsZ       = pinSectionZ + pinSectionDepth;           // clicker wall section
+  const magnetZ      = wallsZ + (clickerTotalDepth - clickerFloorDepth - pinSectionDepth - magnetSectionDepth); // sits at the top
+
   // Boss sits bossFloorGap mm above the absolute clicker bottom.
   // The two boss pieces are stacked: solid base then main shell (with cross pocket).
   const bossBaseZ  = baseZ + bossFloorGap;                    // solid base starts here
@@ -638,12 +644,27 @@ function InnerClickerGroupInner({
         </>
       )}
 
-      <mesh ref={clickerWallsRef} position={[0, 0, wallsZ]} castShadow={!isXray && !isWire} receiveShadow>
-        <primitive object={geos.walls} />
-        <meshStandardMaterial color={color} metalness={0.25} roughness={0.45} opacity={isWire ? 0 : isXray ? 0.3 : 1} transparent={isWire || isXray} depthWrite={!isWire && !isXray} />
-      </mesh>
-      {isWire && <EdgeWireframe geometry={geos.walls} position={[0, 0, wallsZ]} color={color} />}
-      <MeshHighlightOverlay geometry={geos.walls} position={[0, 0, wallsZ]} highlighted={hl("click_walls")} />
+      {geos.walls && (
+        <>
+          <mesh ref={clickerWallsRef} position={[0, 0, wallsZ]} castShadow={!isXray && !isWire} receiveShadow>
+            <primitive object={geos.walls} />
+            <meshStandardMaterial color={color} metalness={0.25} roughness={0.45} opacity={isWire ? 0 : isXray ? 0.3 : 1} transparent={isWire || isXray} depthWrite={!isWire && !isXray} />
+          </mesh>
+          {isWire && <EdgeWireframe geometry={geos.walls} position={[0, 0, wallsZ]} color={color} />}
+          <MeshHighlightOverlay geometry={geos.walls} position={[0, 0, wallsZ]} highlighted={hl("click_walls")} />
+        </>
+      )}
+
+      {geos.magnetSection && (
+        <>
+          <mesh ref={clickerMagnetSectionRef} position={[0, 0, magnetZ]} castShadow={!isXray && !isWire} receiveShadow>
+            <primitive object={geos.magnetSection} />
+            <meshStandardMaterial color={color} metalness={0.25} roughness={0.45} opacity={isWire ? 0 : isXray ? 0.3 : 1} transparent={isWire || isXray} depthWrite={!isWire && !isXray} />
+          </mesh>
+          {isWire && <EdgeWireframe geometry={geos.magnetSection} position={[0, 0, magnetZ]} color={color} />}
+          <MeshHighlightOverlay geometry={geos.magnetSection} position={[0, 0, magnetZ]} highlighted={hl("click_walls")} />
+        </>
+      )}
 
       {/* Boss base — solid disk that closes the bottom of the cross pocket (default mode only) */}
       {geos.bossBase && (
@@ -719,6 +740,7 @@ const InnerClickerGroup = memo(
     prev.bossBaseRef === next.bossBaseRef &&
     prev.bossMainRef === next.bossMainRef &&
     prev.clickerKeyRingRef === next.clickerKeyRingRef &&
+    prev.clickerMagnetSectionRef === next.clickerMagnetSectionRef &&
     arraysShallowEqual(prev.activeHighlights, next.activeHighlights) &&
     getInnerClickerSig(prev.settings) === getInnerClickerSig(next.settings) &&
     getKeyRingSig(prev.settings) === getKeyRingSig(next.settings) &&
@@ -1496,6 +1518,7 @@ export default function Studio() {
   const shellBossMainRef = useRef<THREE.Mesh | null>(null);
   const keyRingRef = useRef<THREE.Mesh | null>(null);
   const clickerKeyRingRef = useRef<THREE.Mesh | null>(null);
+  const clickerMagnetSectionRef = useRef<THREE.Mesh | null>(null);
   const clickerFloorRef = useRef<THREE.Mesh | null>(null);
   const clickerWallsRef = useRef<THREE.Mesh | null>(null);
   const clickerPinSectionRef = useRef<THREE.Mesh | null>(null);
@@ -1747,7 +1770,7 @@ export default function Studio() {
   const getMeshGroups = (): MeshGroups => ({
     shell: [outerWallRef, innerFillFloorRef, innerFillPinSectionRef, innerFillWallsRef, innerFillHousingCapRef, shellBossBaseRef, shellBossMainRef]
       .map((r) => r.current).filter((m): m is THREE.Mesh => m !== null),
-    clicker: [clickerFloorRef, clickerPinSectionRef, clickerWallsRef, bossBaseRef, bossMainRef, clickerKeyRingRef]
+    clicker: [clickerFloorRef, clickerPinSectionRef, clickerWallsRef, clickerMagnetSectionRef, bossBaseRef, bossMainRef, clickerKeyRingRef]
       .map((r) => r.current).filter((m): m is THREE.Mesh => m !== null),
     keyRing: (settings.keyRingEnabled && (settings.keyRingOnShell ?? true)) ? keyRingRef.current : null,
     colorLayers: (() => {
@@ -2007,6 +2030,43 @@ export default function Studio() {
               >
                 Advanced
               </button>
+            </div>
+
+            {/* ── Product Type Selector ── */}
+            <div>
+              <Label className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 block">
+                Product Type
+              </Label>
+              <select
+                value={settings.product ?? "fidget"}
+                onChange={(e) => {
+                  const newProduct = e.target.value as ProductType;
+                  const defaults = PRODUCT_DEFAULTS[newProduct] || DEFAULT_SETTINGS;
+                  
+                  if (newProduct === "standee" || newProduct === "magnet" || newProduct === "keychain") {
+                    setShowOuterShell(false);
+                  } else if (settings.product === "standee" || settings.product === "magnet" || settings.product === "keychain") {
+                    setShowOuterShell(true);
+                  }
+
+                  setSettings((s) => ({
+                    ...s,
+                    ...defaults,
+                    // Retain size and colors when switching products
+                    targetSizeMm: s.targetSizeMm,
+                    lockDimension: s.lockDimension,
+                    shellColor: s.shellColor,
+                    clickerColor: s.clickerColor,
+                    product: newProduct,
+                  }));
+                }}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="fidget">Fidget Clicker</option>
+                <option value="standee">PLA Standee</option>
+                <option value="magnet">Magnet</option>
+                <option value="keychain">Keychain</option>
+              </select>
             </div>
 
             {/* Upload zone */}
@@ -2399,6 +2459,54 @@ export default function Studio() {
                   <span className="text-sm">Inner housings</span>
                   <InfoTooltip text="When off, all MX mechanism geometry (keycap pocket, switch cavity, boss, pin holes) is removed from both pieces. Use this for decorative two-piece shells." />
                 </label>
+              </div>
+            </div>
+            )}
+
+            {/* ── Magnet Controls ── */}
+            {sidebarMode === "advanced" && settings.product === "magnet" && (
+            <div>
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+                Magnet
+              </h2>
+              <div className="space-y-5">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={settings.magnetHoleEnabled ?? false}
+                    onChange={(e) => setSetting("magnetHoleEnabled", e.target.checked)}
+                    className="h-4 w-4 rounded accent-primary"
+                  />
+                  <span className="text-sm">Cut magnet hole</span>
+                </label>
+                {settings.magnetHoleEnabled && (
+                  <>
+                    <SliderRow
+                      label="Magnet diameter"
+                      value={settings.magnetDiameter ?? DEFAULT_SETTINGS.magnetDiameter}
+                      min={1}
+                      max={30}
+                      step={0.1}
+                      unit="mm"
+                      onChange={(v) => setSetting("magnetDiameter", v)}
+                      commitOnRelease
+                      defaultValue={DEFAULT_SETTINGS.magnetDiameter}
+                      onReset={() => setSetting("magnetDiameter", DEFAULT_SETTINGS.magnetDiameter)}
+                    />
+                    <SliderRow
+                      label="Magnet depth"
+                      value={settings.magnetDepth ?? DEFAULT_SETTINGS.magnetDepth}
+                      min={0.5}
+                      max={10}
+                      step={0.1}
+                      unit="mm"
+                      onChange={(v) => setSetting("magnetDepth", v)}
+                      commitOnRelease
+                      defaultValue={DEFAULT_SETTINGS.magnetDepth}
+                      onReset={() => setSetting("magnetDepth", DEFAULT_SETTINGS.magnetDepth)}
+                    />
+                  </>
+                )}
               </div>
             </div>
             )}
@@ -3269,6 +3377,7 @@ export default function Studio() {
                         bossBaseRef={bossBaseRef}
                         bossMainRef={bossMainRef}
                         clickerKeyRingRef={clickerKeyRingRef}
+                        clickerMagnetSectionRef={clickerMagnetSectionRef}
                         fitCheck={fitCheckMode}
                         onBounds={setClickerBounds}
                         color={settings.clickerColor ?? DEFAULT_SETTINGS.clickerColor}

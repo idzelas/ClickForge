@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { insetPolygon, outsetPolygon } from "./polygonOffset";
 
+export type ProductType = "fidget" | "standee" | "magnet" | "keychain";
+
 export interface FidgetSettings {
   // Outer shell depth — three additive components (total = sum of all three)
   shellSolidFloor: number;     // solid floor at the very bottom of the shell (mm), e.g. 2
@@ -92,6 +94,11 @@ export interface FidgetSettings {
   jigRows: number;        // default 1
   jigCols: number;        // default 1
   jigSpacing: number;     // mm, default 2
+  product?: ProductType;
+  // Magnet Hole Settings
+  magnetHoleEnabled: boolean;
+  magnetDiameter: number; // mm
+  magnetDepth: number;    // mm, cut from the top face downwards
 }
 
 export const DEFAULT_SETTINGS: FidgetSettings = {
@@ -149,6 +156,39 @@ export const DEFAULT_SETTINGS: FidgetSettings = {
   jigRows: 1,
   jigCols: 1,
   jigSpacing: 2,
+  product: "fidget",
+  magnetHoleEnabled: false,
+  magnetDiameter: 12,
+  magnetDepth: 3,
+};
+
+export const PRODUCT_DEFAULTS: Record<ProductType, Partial<FidgetSettings>> = {
+  fidget: {
+    ...DEFAULT_SETTINGS,
+  },
+  standee: {
+    ...DEFAULT_SETTINGS,
+    product: "standee",
+    housingsEnabled: false,
+    keyRingEnabled: false,
+    mirrorClicker: false,
+  },
+  magnet: {
+    ...DEFAULT_SETTINGS,
+    product: "magnet",
+    housingsEnabled: false,
+    keyRingEnabled: false,
+    mirrorClicker: false,
+    magnetHoleEnabled: true,
+  },
+  keychain: {
+    ...DEFAULT_SETTINGS,
+    product: "keychain",
+    housingsEnabled: false,
+    keyRingEnabled: true,
+    keyRingOnShell: false,
+    keyRingOnClicker: true,
+  },
 };
 
 /**
@@ -241,6 +281,13 @@ export interface InnerClickerGeometries {
   pinSection: THREE.BufferGeometry | null;
   /** Height of the pin-hole section (mm); 0 when `pinSection` is null. */
   pinSectionDepth: number;
+  /**
+   * Upper-most section of the clicker walls with a circular hole for the magnet.
+   * Only present when `magnetHoleEnabled` is true.
+   */
+  magnetSection: THREE.BufferGeometry | null;
+  /** Height of the magnet section (mm); 0 when `magnetSection` is null. */
+  magnetSectionDepth: number;
   clickerTotalDepth: number;
   clickerFloorDepth: number;
   bossFloorGap: number;
@@ -293,6 +340,7 @@ export function getInnerClickerSig(s: FidgetSettings): string {
     s.mirrorClicker, s.clearanceMm,
     s.targetSizeMm, s.lockDimension,
     s.housingsEnabled ?? true,
+    s.magnetHoleEnabled ?? false, s.magnetDiameter, s.magnetDepth,
   ].join("|");
 }
 
@@ -746,12 +794,35 @@ export function createInnerClickerGeometries(
   const pinSectionDepth = (swapCutouts && pinHolesEnabled && housingsEnabled)
     ? Math.min(pinHoleDepth, Math.max(0, clickerSquareDepth - 1))
     : 0;
-  const wallsDepth = clickerSquareDepth - pinSectionDepth;
+  
+  let wallsDepth = clickerSquareDepth - pinSectionDepth;
 
-  // Upper section — switch housing cavity (omit hole when housings are disabled)
-  const wallsShape = cloneShape(clickerShape);
-  if (housingsEnabled) addSquareHole(wallsShape, clickerSquareSize, ox, oy);
-  const wallsGeo = extrudeShape(wallsShape, wallsDepth, "clicker/walls", clickerStats);
+  const magnetHoleEnabled = settings.magnetHoleEnabled ?? false;
+  const magnetDiameter    = settings.magnetDiameter ?? DEFAULT_SETTINGS.magnetDiameter;
+  const magnetDepth       = settings.magnetDepth ?? DEFAULT_SETTINGS.magnetDepth;
+
+  let magnetSectionDepth = 0;
+  let magnetGeo: THREE.BufferGeometry | null = null;
+  
+  if (magnetHoleEnabled) {
+    // Magnet section eats into wallsDepth from the top
+    magnetSectionDepth = Math.min(magnetDepth, Math.max(0, wallsDepth));
+    wallsDepth -= magnetSectionDepth;
+
+    if (magnetSectionDepth > 0) {
+      const magnetShape = cloneShape(clickerShape);
+      addCircleHole(magnetShape, magnetDiameter / 2, ox, oy);
+      magnetGeo = extrudeShape(magnetShape, magnetSectionDepth, "clicker/magnet", clickerStats);
+    }
+  }
+
+  // Middle section (or full upper section if no magnet) — solid walls (with switch cavity if enabled)
+  let wallsGeo: THREE.BufferGeometry | null = null;
+  if (wallsDepth > 0) {
+    const wallsShape = cloneShape(clickerShape);
+    if (housingsEnabled) addSquareHole(wallsShape, clickerSquareSize, ox, oy);
+    wallsGeo = extrudeShape(wallsShape, wallsDepth, "clicker/walls", clickerStats);
+  }
 
   // Lower pin-hole section (swap mode only) — sits between floor and walls,
   // mirroring the layering pattern the shell uses in default mode.
@@ -791,11 +862,13 @@ export function createInnerClickerGeometries(
 
   return {
     floor: floorGeo,
-    walls: wallsGeo,
+    walls: wallsGeo!, // Guaranteed to be created if clickerSquareDepth > pinSectionDepth + magnetSectionDepth
     bossBase: bossBaseGeo,
     bossMain: bossMainGeo,
     pinSection: pinSectionGeo,
     pinSectionDepth,
+    magnetSection: magnetGeo,
+    magnetSectionDepth,
     clickerTotalDepth,
     clickerFloorDepth,
     bossFloorGap,
@@ -1241,6 +1314,18 @@ function addSquareHole(shape: THREE.Shape, size: number, cx = 0, cy = 0): void {
   // triangle → NaN normal → visible spike.  Omitting closePath() lets
   // sidewalls() wrap implicitly (k = pts.length-1 when i = 0) with no
   // duplicate vertex, and earcut triangulates the face correctly.
+  shape.holes.push(hole);
+}
+
+function addCircleHole(shape: THREE.Shape, radius: number, cx = 0, cy = 0): void {
+  const SEG = 64;
+  const pts: THREE.Vector2[] = [];
+  for (let i = 0; i < SEG; i++) {
+    const angle = (i / SEG) * Math.PI * 2;
+    pts.push(new THREE.Vector2(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius));
+  }
+  const hole = new THREE.Path();
+  hole.setFromPoints(pts);
   shape.holes.push(hole);
 }
 
