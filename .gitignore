@@ -51,3 +51,6 @@ supabase/.temp/
 
 # Local feature planning files
 /.local/
+
+# AI Analysis Results
+/artifacts/fidget-toy/docs/analysis_results.md

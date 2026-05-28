@@ -83,6 +83,7 @@ import {
   Settings2,
   Crown,
   EyeOff,
+  Eye,
   LogIn,
 } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -1256,6 +1257,8 @@ export default function Studio() {
   const [showDimensions, setShowDimensions] = useState(true);
   const [recenterKey, setRecenterKey] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>("solid");
+  const [showOuterShell, setShowOuterShell] = useState(true);
+  const [showInnerClicker, setShowInnerClicker] = useState(true);
 
   // ── Free / Premium tier ──────────────────────────────────────────────
   const tier = useTier();
@@ -3102,6 +3105,34 @@ export default function Studio() {
                 <Ruler className="h-3.5 w-3.5" />
                 Dimensions
               </button>
+              {/* Outer Shell visibility toggle */}
+              <button
+                onClick={() => setShowOuterShell((v) => !v)}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium border transition-colors ${
+                  showOuterShell
+                    ? "bg-background/80 border-border text-muted-foreground hover:text-foreground backdrop-blur-sm"
+                    : "bg-rose-600/80 border-rose-500 text-white shadow-lg"
+                }`}
+                title={showOuterShell ? "Hide outer shell" : "Show outer shell"}
+                id="toggle-outer-shell"
+              >
+                {showOuterShell ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                Outer Shell
+              </button>
+              {/* Inner Clicker visibility toggle */}
+              <button
+                onClick={() => setShowInnerClicker((v) => !v)}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium border transition-colors ${
+                  showInnerClicker
+                    ? "bg-background/80 border-border text-muted-foreground hover:text-foreground backdrop-blur-sm"
+                    : "bg-rose-600/80 border-rose-500 text-white shadow-lg"
+                }`}
+                title={showInnerClicker ? "Hide inner clicker" : "Show inner clicker"}
+                id="toggle-inner-clicker"
+              >
+                {showInnerClicker ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                Inner Clicker
+              </button>
               {/* Wireframe toggle */}
               <button
                 onClick={() => setViewMode((v) => v === "wireframe" ? "solid" : "wireframe")}
@@ -3195,26 +3226,28 @@ export default function Studio() {
               <group rotation={[-Math.PI / 2, 0, 0]}>
                 {svgState ? (
                   <>
-                    <OuterShellGroup
-                      shapes={svgState.shapes}
-                      settings={settings}
-                      svgWidth={svgState.width}
-                      svgHeight={svgState.height}
-                      outerWallRef={outerWallRef}
-                      innerFillFloorRef={innerFillFloorRef}
-                      innerFillPinSectionRef={innerFillPinSectionRef}
-                      innerFillWallsRef={innerFillWallsRef}
-                      innerFillHousingCapRef={innerFillHousingCapRef}
-                      shellBossBaseRef={shellBossBaseRef}
-                      shellBossMainRef={shellBossMainRef}
-                      keyRingRef={keyRingRef}
-                      fitCheck={fitCheckMode}
-                      onBounds={setShellBounds}
-                      color={settings.shellColor ?? DEFAULT_SETTINGS.shellColor}
-                      activeHighlights={sliderHighlight}
-                      viewMode={viewMode}
-                    />
-                    {colorLayerGeometries.length > 0 && (
+                    {showOuterShell && (
+                      <OuterShellGroup
+                        shapes={svgState.shapes}
+                        settings={settings}
+                        svgWidth={svgState.width}
+                        svgHeight={svgState.height}
+                        outerWallRef={outerWallRef}
+                        innerFillFloorRef={innerFillFloorRef}
+                        innerFillPinSectionRef={innerFillPinSectionRef}
+                        innerFillWallsRef={innerFillWallsRef}
+                        innerFillHousingCapRef={innerFillHousingCapRef}
+                        shellBossBaseRef={shellBossBaseRef}
+                        shellBossMainRef={shellBossMainRef}
+                        keyRingRef={keyRingRef}
+                        fitCheck={fitCheckMode}
+                        onBounds={setShellBounds}
+                        color={settings.shellColor ?? DEFAULT_SETTINGS.shellColor}
+                        activeHighlights={sliderHighlight}
+                        viewMode={viewMode}
+                      />
+                    )}
+                    {showOuterShell && colorLayerGeometries.length > 0 && (
                       <ColorLayersGroup
                         geometries={colorLayerGeometries}
                         settings={settings}
@@ -3224,23 +3257,25 @@ export default function Studio() {
                         groupRef={colorLayersGroupRef}
                       />
                     )}
-                    <InnerClickerGroup
-                      shapes={svgState.shapes}
-                      settings={settings}
-                      svgWidth={svgState.width}
-                      svgHeight={svgState.height}
-                      clickerFloorRef={clickerFloorRef}
-                      clickerWallsRef={clickerWallsRef}
-                      clickerPinSectionRef={clickerPinSectionRef}
-                      bossBaseRef={bossBaseRef}
-                      bossMainRef={bossMainRef}
-                      clickerKeyRingRef={clickerKeyRingRef}
-                      fitCheck={fitCheckMode}
-                      onBounds={setClickerBounds}
-                      color={settings.clickerColor ?? DEFAULT_SETTINGS.clickerColor}
-                      activeHighlights={sliderHighlight}
-                      viewMode={viewMode}
-                    />
+                    {showInnerClicker && (
+                      <InnerClickerGroup
+                        shapes={svgState.shapes}
+                        settings={settings}
+                        svgWidth={svgState.width}
+                        svgHeight={svgState.height}
+                        clickerFloorRef={clickerFloorRef}
+                        clickerWallsRef={clickerWallsRef}
+                        clickerPinSectionRef={clickerPinSectionRef}
+                        bossBaseRef={bossBaseRef}
+                        bossMainRef={bossMainRef}
+                        clickerKeyRingRef={clickerKeyRingRef}
+                        fitCheck={fitCheckMode}
+                        onBounds={setClickerBounds}
+                        color={settings.clickerColor ?? DEFAULT_SETTINGS.clickerColor}
+                        activeHighlights={sliderHighlight}
+                        viewMode={viewMode}
+                      />
+                    )}
 
                     {/* ── Jig meshes — placed below their respective parts in local Y ── */}
                     {settings.jigEnabled && innerJigOutput && (
